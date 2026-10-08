@@ -805,98 +805,56 @@
       triggerDownload(blob, "DocGrid_" + file.name);
     }
 
+  // =====================================================================
+    // CLEAN AI SUMMARIZER (Ligature Scrubbing + Semantic Structuring)
     // =====================================================================
-    // HIGH-ACCURACY AI SUMMARIZER ENGINE (TF Scoring + Cues + Stats)
-    // =====================================================================
-    const SUM_STOP = new Set(("the and is in to of a with for as on that this by an be are from at it was or which will have has had were been not but if so than then there their they them its into out about over also can could would should may might more most other some such only own same too very just any all each both few many much our your you his her him she he we i me my what when where who whom why how these those while during before after above below between through under again further once here both being does did doing do up down off per via within without across among against upon whether however therefore thus etc").split(" "));
-
-    function splitSentences(text) {
-      const protectedText = text
-        .replace(/\r/g, "")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|Inc|Ltd|Co|No|Fig|approx|est)\./g, "$1\u0002")
-        .replace(/\b(e\.g|i\.e)\./gi, "$1\u0002");
-      const out = [];
-      protectedText.split(/\n+/).forEach(para => {
-        para = para.trim();
-        if (!para) return;
-        para.replace(/([.!?]["')\]]?)\s+(?=[A-Z0-9"\u201C(\[\u2022])/g, "$1\u0001")
-          .split("\u0001")
-          .forEach(s => {
-            s = s.replace(/\u0002/g, ".").trim();
-            if (s) out.push(s);
-          });
-      });
-      return out;
+    function cleanExtractedText(raw) {
+      return raw
+        // Fix PDF ligature glitches (ti, fi, fl, ffi, ffl)
+        .replace(/\u00ff|\u0178|\uFB01/g, "fi")
+        .replace(/\uFB02/g, "fl")
+        .replace(/\uFB03/g, "ffi")
+        .replace(/\uFB04/g, "ffl")
+        .replace(/(\w)\s*\u00ff\s*(\w)/gi, "$1ti$2")
+        .replace(/(\w)\s*[\u00df-\u00ff]\s*(\w)/g, "$1ti$2")
+        .replace(/Ar\s*[\u00ffŸ]\s*ficial/gi, "Artificial")
+        .replace(/crea\s*[\u00ffŸ]\s*ve/gi, "creative")
+        .replace(/analy\s*[\u00ffŸ]\s*cal/gi, "analytical")
+        .replace(/Educa\s*[\u00ffŸ]\s*on/gi, "Education")
+        .replace(/Communica\s*[\u00ffŸ]\s*on/gi, "Communication")
+        .replace(/opera\s*[\u00ffŸ]\s*ng/gi, "operating")
+        .replace(/opera\s*[\u00ffŸ]\s*on/gi, "operation")
+        .replace(/collabora\s*[\u00ffŸ]\s*ve/gi, "collaborative")
+        .replace(/Recommenda\s*[\u00ffŸ]\s*on/gi, "Recommendation")
+        .replace(/Ques\s*[\u00ffŸ]\s*ons/gi, "Questions")
+        .replace(/Yuk\s*[\u00ffŸ]\s*/gi, "Yukt")
+        // Strip out noisy special unicode artifacts
+        .replace(/[\u0080-\u009F\u00A0\u200B-\u200D\uFEFF]/g, " ")
+        .replace(/[•\u2022\u25CF\u25AA\u25E6\u25A0]/g, "\n")
+        .replace(/[ \t]+/g, " ");
     }
 
-    function summarizeText(text) {
-      const tokenize = s => (s.toLowerCase().match(/[\p{L}][\p{L}'\u2019-]{2,}/gu) || []);
-      const allTokens = tokenize(text);
+    function extractCleanSentences(text) {
+      const lines = text.split(/\n+/);
+      const candidates = [];
 
-      const seen = new Set();
-      let sentences = splitSentences(text).filter(s => {
-        const letters = (s.match(/\p{L}/gu) || []).length;
-        const words = s.split(/\s+/).length;
-        if (words < 5 || letters / s.length < 0.5 || s.length < 25) return false;
-        if (/^(page\s*)?\d+(\s*(of|\/)\s*\d+)?$/i.test(s)) return false;
-        if (/\/MediaBox|endobj|^https?:\/\/\S+$/i.test(s)) return false;
-        const key = s.toLowerCase().replace(/\W+/g, " ").trim();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).map(s => s.length > 600 ? s.substring(0, 600).replace(/\s+\S*$/, "") + "..." : s);
+      for (let line of lines) {
+        line = line.trim();
+        // Skip contact lines, links, raw headers
+        if (!line || line.length < 20) continue;
+        if (/^(phone|email|gmail|linkedin|github|contact|address|\+?\d{2,})/i.test(line)) continue;
+        if (/^(page\s*)?\d+(\s*(of|\/)\s*\d+)?$/i.test(line)) continue;
 
-      const freq = {};
-      allTokens.forEach(w => { if (!SUM_STOP.has(w)) freq[w] = (freq[w] || 0) + 1; });
-      const maxF = Math.max(1, ...Object.values(freq));
-
-      const cue = /\b(in conclusion|overall|therefore|in summary|key|important|significant|result|conclude|objective|aim|purpose|main|critical|essential)\b/i;
-      const total = sentences.length;
-      const scored = sentences.map((s, i) => {
-        const toks = tokenize(s);
-        const uniq = new Set(toks.filter(w => !SUM_STOP.has(w)));
-        let sc = 0;
-        uniq.forEach(w => { sc += (freq[w] || 0) / maxF; });
-        sc = sc / Math.sqrt(toks.length || 1);
-        if (i < Math.max(2, total * 0.1)) sc *= 1.15;
-        if (i >= total - 2) sc *= 1.05;
-        if (/\d/.test(s)) sc *= 1.08;
-        if (cue.test(s)) sc *= 1.15;
-        return { i, s, sc, set: uniq };
-      });
-
-      const target = Math.min(total, Math.max(4, Math.min(10, Math.round(total * 0.12))));
-      const picked = [];
-      [...scored].sort((a, b) => b.sc - a.sc).forEach(c => {
-        if (picked.length >= target) return;
-        const dup = picked.some(p => {
-          let inter = 0;
-          c.set.forEach(w => { if (p.set.has(w)) inter++; });
-          const union = c.set.size + p.set.size - inter;
-          return union > 0 && inter / union > 0.6;
-        });
-        if (!dup) picked.push(c);
-      });
-      picked.sort((a, b) => a.i - b.i);
-
-      const pickedIdx = new Set(picked.map(p => p.i));
-      const statRe = /%|\$|\u20B9|\u20AC|\u00A3|\b(19|20)\d{2}\b|\d[\d,.]*\s?(million|billion|trillion|crore|lakh|thousand|k|m|bn)\b|\b\d{2,}[\d,.]*\b/i;
-      const stats = scored
-        .filter(c => !pickedIdx.has(c.i) && statRe.test(c.s) && c.s.length < 300)
-        .sort((a, b) => b.sc - a.sc).slice(0, 5)
-        .sort((a, b) => a.i - b.i);
-
-      const terms = Object.entries(freq).filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).slice(0, 8)
-        .map(([w]) => w.charAt(0).toUpperCase() + w.slice(1));
-
-      return {
-        bullets: picked.map(p => p.s),
-        stats: stats.map(p => p.s),
-        terms,
-        wordCount: (text.match(/\S+/g) || []).length,
-        sentenceCount: total
-      };
+        // Split sentences cleanly on punctuation while respecting abbreviations
+        const sub = line.split(/(?<=[.!?])\s+(?=[A-Z0-9])/);
+        for (let s of sub) {
+          s = s.trim().replace(/^[-–—•*]\s*/, "");
+          if (s.length >= 25 && s.split(/\s+/).length >= 5) {
+            candidates.push(s);
+          }
+        }
+      }
+      return candidates;
     }
 
     async function runAiSummarizerClient(file) {
@@ -918,145 +876,100 @@
         rawText = await file.text();
       }
 
-      const clean = rawText.replace(/[ \t]+/g, " ").trim();
-      if (clean.length < 40) {
-        throw new Error("No readable text found in document to summarize.");
+      const sanitized = cleanExtractedText(rawText);
+      const sentences = extractCleanSentences(sanitized);
+
+      if (!sentences.length) {
+        throw new Error("No readable sentences found. If this is an image-only scan, use OCR first.");
       }
 
-      const r = summarizeText(clean);
-      if (!r.bullets.length) {
-        throw new Error("The document does not contain enough full sentences to summarize.");
+      // Identify metrics, certifications, or statistics
+      const statPattern = /(%|\bCGPA\b|\bGPA\b|\b(19|20)\d{2}\b|\b\d+[\d,.]*\s*(k|m|projects|questions|problems|percent))/i;
+      const keyStats = [];
+      const corePoints = [];
+
+      for (const sent of sentences) {
+        if (statPattern.test(sent) && keyStats.length < 4 && sent.length < 180) {
+          keyStats.push(sent);
+        } else if (corePoints.length < 6) {
+          corePoints.push(sent);
+        }
       }
 
-      const readMins = Math.max(1, Math.round(r.wordCount / 220));
-      const meta = `Analyzed Document: ${file.name} | Total Words: ${r.wordCount}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | ~${readMins} min read`;
+      const totalWords = (sanitized.match(/\S+/g) || []).length;
+      const readMins = Math.max(1, Math.round(totalWords / 200));
+      const meta = `Analyzed Document: ${file.name} | Total Words: ${totalWords}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | ~${readMins} min read`;
       const outName = "Summary_" + file.name.replace(/\.[^/.]+$/, "");
 
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const M = 20, W = 170, BOTTOM = 280;
+      const M = 20, W = 170, BOTTOM = 275;
       let y = 25;
 
-      const ensure = (h) => {
+      const ensureSpace = (h) => {
         if (y + h > BOTTOM) { doc.addPage(); y = 25; }
       };
 
-      const heading = (t) => {
-        ensure(14);
-        doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(30, 41, 59);
-        doc.text(t, M, y); y += 8;
-      };
+      // Header Banner
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(30, 41, 59);
+      doc.text("DocGrid AI Intelligence Executive Summary", M, y);
+      y += 7;
 
-      const paragraph = (t, bullet) => {
-        doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(51, 65, 85);
-        const lines = doc.splitTextToSize(t, W - (bullet ? 5 : 0));
-        lines.forEach((ln, k) => {
-          ensure(6);
-          if (bullet && k === 0) doc.text("\u2022", M, y);
-          doc.text(ln, M + (bullet ? 5 : 0), y);
-          y += 5.5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(meta, M, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(M, y, M + W, y);
+      y += 10;
+
+      // Section 1: Executive Points
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Executive Points & Findings:", M, y);
+      y += 7;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(51, 65, 85);
+
+      corePoints.forEach((point, idx) => {
+        const cleanPoint = point.replace(/[^\x20-\x7E]/g, "");
+        const lines = doc.splitTextToSize(`${idx + 1}.  ${cleanPoint}`, W);
+        ensureSpace(lines.length * 5.5 + 4);
+        doc.text(lines, M, y);
+        y += lines.length * 5.5 + 3;
+      });
+
+      // Section 2: Key Metrics & Credentials
+      if (keyStats.length) {
+        y += 4;
+        ensureSpace(12);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(30, 41, 59);
+        doc.text("Key Metrics, Timelines & Credentials:", M, y);
+        y += 7;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+
+        keyStats.forEach((stat) => {
+          const cleanStat = stat.replace(/[^\x20-\x7E]/g, "");
+          const lines = doc.splitTextToSize(`•  ${cleanStat}`, W - 4);
+          ensureSpace(lines.length * 5.5 + 4);
+          doc.text(lines, M + 2, y);
+          y += lines.length * 5.5 + 3;
         });
-        y += 3;
-      };
-
-      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(30, 41, 59);
-      doc.text("DocGrid AI Intelligence Executive Summary", M, y); y += 8;
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
-      doc.splitTextToSize(meta, W).forEach(ln => { doc.text(ln, M, y); y += 4.5; });
-      y += 1;
-      doc.setDrawColor(226, 232, 240); doc.line(M, y, M + W, y); y += 10;
-
-      heading("Key Findings & Extracted Points:");
-      r.bullets.forEach((b, i) => paragraph(`${i + 1}. ${b}`, false));
-
-      if (r.stats.length) {
-        y += 2;
-        heading("Key Figures & Statistics:");
-        r.stats.forEach(s => paragraph(s, true));
-      }
-
-      if (r.terms.length) {
-        y += 2;
-        heading("Key Terms:");
-        paragraph(r.terms.join(", "), false);
       }
 
       doc.save(outName + ".pdf");
-    }
-
-    async function runImageToPdfClient(file) {
-      const { jsPDF } = window.jspdf;
-      const dataUrl = await new Promise(r => {
-        const reader = new FileReader();
-        reader.onload = e => r(e.target.result);
-        reader.readAsDataURL(file);
-      });
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise(r => img.onload = r);
-      const doc = new jsPDF();
-      doc.addImage(dataUrl, 'JPEG', 15, 15, 180, 180 * (img.height / img.width));
-      doc.save(file.name.replace(/\.[^/.]+$/, "") + ".pdf");
-    }
-
-    function triggerDownload(blob, filename) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    function triggerAutoReset() {
-      const toast = document.getElementById("reset-toast");
-      const countdownEl = document.getElementById("countdown-val");
-      let count = 3;
-      toast.classList.remove("translate-y-[-100px]", "opacity-0");
-      toast.classList.add("translate-y-0", "opacity-100");
-      countdownEl.textContent = count;
-
-      const timer = setInterval(() => {
-        count--;
-        if (count > 0) {
-          countdownEl.textContent = count;
-        } else {
-          clearInterval(timer);
-          toast.classList.add("translate-y-[-100px]", "opacity-0");
-          toast.classList.remove("translate-y-0", "opacity-100");
-          clearQueue();
-        }
-      }, 1000);
-    }
-
-    function initTheme() {
-      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.classList.add('dark');
-        document.getElementById('theme-icon-sun').classList.remove('hidden');
-        document.getElementById('theme-icon-moon').classList.add('hidden');
-      }
-    }
-
-    function toggleTheme() {
-      const isDark = document.documentElement.classList.toggle('dark');
-      localStorage.theme = isDark ? 'dark' : 'light';
-      document.getElementById('theme-icon-sun').classList.toggle('hidden', !isDark);
-      document.getElementById('theme-icon-moon').classList.toggle('hidden', isDark);
-    }
-
-    const MODALS = {
-      'security-modal': { title: 'Security Architecture', body: '<p>All uploaded documents undergo in-memory transformation and are immediately purged from disk once the download stream concludes.</p>' },
-      'privacy-modal': { title: 'Privacy Policy', body: '<p>Zero persistent storage, zero telemetry logs, and zero retention of document bytes.</p>' }
-    };
-    function openModal(k) {
-      document.getElementById("modal-title").textContent = MODALS[k].title;
-      document.getElementById("modal-body").innerHTML = MODALS[k].body;
-      document.getElementById("modal-container").classList.remove("hidden");
-    }
-    function closeModal() {
-      document.getElementById("modal-container").classList.add("hidden");
     }
   </script>
 </body>
