@@ -47,6 +47,62 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', engine: 'LibreOffice Headless + Poppler' });
 });
 
+// AI EXECUTIVE SUMMARIZER (Powered by Google Gemini)
+app.post('/api/summarize', async (req, res) => {
+  try {
+    const { text, filename } = req.body;
+    if (!text || text.trim().length < 30) {
+      return res.status(400).json({ error: 'Insufficient document text provided.' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+
+    const prompt = `You are an elite executive document analyst. Read the following text extracted from "${filename || 'Document'}" and provide a fluent, professional executive summary.
+
+Write in natural, complete, human-readable sentences. Follow this exact format:
+
+## Executive Overview
+(A clear 2-3 sentence paragraph explaining what this document is, the profile/subject, and primary purpose)
+
+## Key Highlights & Core Details
+(3 to 5 bullet points written in polished, full sentences explaining major accomplishments, components, or findings)
+
+## Notable Metrics & Credentials
+(2 to 3 bullet points highlighting specific numbers, dates, tools, technologies, or quantitative results)
+
+Document content:
+"""
+${text.slice(0, 15000)}
+"""`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1000 }
+        })
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'Gemini API request failed.');
+    }
+
+    const aiSummary = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    res.json({ summary: aiSummary });
+  } catch (err) {
+    console.error('Summarization error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate summary.' });
+  }
+});
+
 // 1. HIGH-FIDELITY OFFICE CONVERTER (DOCX, PPTX, XLSX to PDF)
 app.post('/api/convert/to-pdf', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file received.' });
