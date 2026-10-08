@@ -157,7 +157,7 @@
         </div>
       </div>
 
-      <!-- Mobile Horizontal Category Pills (Click navigates directly, does NOT open drawer) -->
+      <!-- Mobile Horizontal Category Pills -->
       <div class="lg:hidden flex items-center gap-1.5 overflow-x-auto py-2 no-scrollbar border-t border-slate-100 dark:border-slate-800/80" id="mobile-pills-container"></div>
     </div>
   </header>
@@ -203,7 +203,7 @@
       </div>
     </aside>
 
-    <!-- Center Workspace (Increased to ~960px width) -->
+    <!-- Center Workspace -->
     <main class="w-full max-w-[960px] space-y-5">
       
       <!-- Polished Hero Header -->
@@ -303,7 +303,7 @@
 
       </div>
 
-      <!-- Mobile-Only 8 Quick-Access Grid (App Style) -->
+      <!-- Mobile-Only 8 Quick-Access Grid -->
       <div class="lg:hidden card-frame p-4 space-y-3">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Top Mobile Tools</span>
@@ -381,10 +381,9 @@
 
   <script>
     // BACKEND API ENDPOINT CONFIGURATION
-    // During local testing, keep http://localhost:3000. When deploying to Render, replace with your Render URL (e.g., https://docgrid-backend.onrender.com)
     const BACKEND_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:3000' 
-  : 'https://docgrid-project.onrender.com';
+      ? 'http://localhost:3000' 
+      : 'https://docgrid-project.onrender.com';
 
     const TOOL_CATEGORIES = [
       {
@@ -502,7 +501,7 @@
       }
       const matches = getAllToolsFlat().filter(t => 
         t.name.toLowerCase().includes(cleanQ) || 
-        t.desc.toLowerCase().includes(cleanQ) ||
+        t.desc.toLowerCase().includes(cleanQ) || 
         t.categoryName.toLowerCase().includes(cleanQ)
       );
 
@@ -565,7 +564,6 @@
       `).join('');
     }
 
-    // Mobile pills click loads the first tool in that category (Does NOT open drawer)
     function renderMobilePills() {
       const pillsContainer = document.getElementById("mobile-pills-container");
       pillsContainer.innerHTML = TOOL_CATEGORIES.map(cat => `
@@ -748,7 +746,6 @@
 
       try {
         if (currentToolId === "word-to-pdf" || currentToolId === "powerpoint-to-pdf" || currentToolId === "excel-to-pdf") {
-          // Send to Render LibreOffice Engine
           await uploadAndConvert(`${BACKEND_URL}/api/convert/to-pdf`, fileQueue[0]);
         } else if (currentToolId === "pdf-to-word") {
           await uploadAndConvert(`${BACKEND_URL}/api/convert/to-docx`, fileQueue[0]);
@@ -760,11 +757,9 @@
         } else if (currentToolId === "ai-summarizer") {
           await runAiSummarizerClient(fileQueue[0]);
         } else {
-          // Client Fallback for images
           await runImageToPdfClient(fileQueue[0]);
         }
 
-        // Trigger Auto-Reset (Stays on current tool)
         triggerAutoReset();
       } catch (err) {
         console.error(err);
@@ -805,7 +800,7 @@
       triggerDownload(blob, "DocGrid_" + file.name);
     }
 
- // =====================================================================
+    // =====================================================================
     // GEMINI-POWERED EXECUTIVE SUMMARIZER
     // =====================================================================
     async function runAiSummarizerClient(file) {
@@ -839,8 +834,8 @@
         throw new Error("No readable text found in document to summarize.");
       }
 
-      // Call our Render backend Gemini route
-      const res = await fetch("/api/summarize", {
+      // Explicitly calls the live Render backend
+      const res = await fetch(`${BACKEND_URL}/api/summarize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: clean, filename: file.name })
