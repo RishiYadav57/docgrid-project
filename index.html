@@ -857,14 +857,13 @@
       return candidates;
     }
 
-    async function runAiSummarizerClient(file) {
+ async function runAiSummarizerClient(file) {
       let rawText = "";
       let pageCount = null;
 
       if (file.name.toLowerCase().endsWith(".pdf")) {
         const arrayBuffer = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-        const pdfDoc = await loadingTask.promise;
+        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         pageCount = pdfDoc.numPages;
 
         for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -876,31 +875,27 @@
         rawText = await file.text();
       }
 
-      const sanitized = cleanExtractedText(rawText);
-      const sentences = extractCleanSentences(sanitized);
-
-      if (!sentences.length) {
-        throw new Error("No readable sentences found. If this is an image-only scan, use OCR first.");
+      // Basic cleanup to remove raw byte anomalies
+      const clean = cleanExtractedText(rawText);
+      if (clean.length < 30) {
+        throw new Error("No readable text found in document to summarize.");
       }
 
-      // Identify metrics, certifications, or statistics
-      const statPattern = /(%|\bCGPA\b|\bGPA\b|\b(19|20)\d{2}\b|\b\d+[\d,.]*\s*(k|m|projects|questions|problems|percent))/i;
-      const keyStats = [];
-      const corePoints = [];
+      // Call our Render backend AI endpoint
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, filename: file.name })
+      });
 
-      for (const sent of sentences) {
-        if (statPattern.test(sent) && keyStats.length < 4 && sent.length < 180) {
-          keyStats.push(sent);
-        } else if (corePoints.length < 6) {
-          corePoints.push(sent);
-        }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "AI Summarizer server error.");
       }
 
-      const totalWords = (sanitized.match(/\S+/g) || []).length;
-      const readMins = Math.max(1, Math.round(totalWords / 200));
-      const meta = `Analyzed Document: ${file.name} | Total Words: ${totalWords}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | ~${readMins} min read`;
-      const outName = "Summary_" + file.name.replace(/\.[^/.]+$/, "");
+      const { summary } = await res.json();
 
+      // Build the formatted PDF with the AI prose
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const M = 20, W = 170, BOTTOM = 275;
@@ -920,6 +915,7 @@
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139);
+      const meta = `Analyzed Document: ${file.name}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | Powered by Gemini`;
       doc.text(meta, M, y);
       y += 4;
 
@@ -927,49 +923,44 @@
       doc.line(M, y, M + W, y);
       y += 10;
 
-      // Section 1: Executive Points
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(30, 41, 59);
-      doc.text("Executive Points & Findings:", M, y);
-      y += 7;
+      // Render markdown sections cleanly
+      const lines = summary.split("\n");
+      for (let rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          y += 2.5;
+          continue;
+        }
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(51, 65, 85);
-
-      corePoints.forEach((point, idx) => {
-        const cleanPoint = point.replace(/[^\x20-\x7E]/g, "");
-        const lines = doc.splitTextToSize(`${idx + 1}.  ${cleanPoint}`, W);
-        ensureSpace(lines.length * 5.5 + 4);
-        doc.text(lines, M, y);
-        y += lines.length * 5.5 + 3;
-      });
-
-      // Section 2: Key Metrics & Credentials
-      if (keyStats.length) {
-        y += 4;
-        ensureSpace(12);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(30, 41, 59);
-        doc.text("Key Metrics, Timelines & Credentials:", M, y);
-        y += 7;
-
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.setTextColor(51, 65, 85);
-
-        keyStats.forEach((stat) => {
-          const cleanStat = stat.replace(/[^\x20-\x7E]/g, "");
-          const lines = doc.splitTextToSize(`•  ${cleanStat}`, W - 4);
-          ensureSpace(lines.length * 5.5 + 4);
-          doc.text(lines, M + 2, y);
-          y += lines.length * 5.5 + 3;
-        });
+        if (line.startsWith("## ")) {
+          y += 3;
+          ensureSpace(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(30, 41, 59);
+          doc.text(line.replace("## ", ""), M, y);
+          y += 6.5;
+        } else if (line.startsWith("* ") || line.startsWith("- ")) {
+          ensureSpace(8);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const bulletText = line.replace(/^[\*\-]\s+/, "");
+          const split = doc.splitTextToSize(`•  ${bulletText}`, W - 4);
+          doc.text(split, M + 2, y);
+          y += split.length * 5 + 2;
+        } else {
+          ensureSpace(8);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const split = doc.splitTextToSize(line, W);
+          doc.text(split, M, y);
+          y += split.length * 5 + 2;
+        }
       }
 
-      doc.save(outName + ".pdf");
+      doc.save("Summary_" + file.name.replace(/\.[^/.]+$/, "") + ".pdf");
     }
   </script>
 </body>
