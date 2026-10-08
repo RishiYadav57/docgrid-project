@@ -1,8 +1,10 @@
-FROM node:20-bullseye-slim
+FROM node:20-bookworm-slim
 
-# Install LibreOffice, Poppler (pdftoppm), fonts, and clean up apt cache
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HOME=/tmp
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libreoffice \
+    libreoffice-nogui \
     libreoffice-writer \
     libreoffice-calc \
     libreoffice-impress \
@@ -10,8 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu-core \
     fontconfig \
-    zip \
-    unzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,7 +22,9 @@ RUN npm install --production
 
 COPY . .
 
-# Set LibreOffice environment flags for headless container operation
+EXPOSE 3000
+
+CMD ["node", "server.js"]
 ENV HOME=/tmp
 
 EXPOSE 3000
