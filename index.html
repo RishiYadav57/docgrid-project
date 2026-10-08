@@ -805,65 +805,17 @@
       triggerDownload(blob, "DocGrid_" + file.name);
     }
 
-  // =====================================================================
-    // CLEAN AI SUMMARIZER (Ligature Scrubbing + Semantic Structuring)
+ // =====================================================================
+    // GEMINI-POWERED EXECUTIVE SUMMARIZER
     // =====================================================================
-    function cleanExtractedText(raw) {
-      return raw
-        // Fix PDF ligature glitches (ti, fi, fl, ffi, ffl)
-        .replace(/\u00ff|\u0178|\uFB01/g, "fi")
-        .replace(/\uFB02/g, "fl")
-        .replace(/\uFB03/g, "ffi")
-        .replace(/\uFB04/g, "ffl")
-        .replace(/(\w)\s*\u00ff\s*(\w)/gi, "$1ti$2")
-        .replace(/(\w)\s*[\u00df-\u00ff]\s*(\w)/g, "$1ti$2")
-        .replace(/Ar\s*[\u00ffŸ]\s*ficial/gi, "Artificial")
-        .replace(/crea\s*[\u00ffŸ]\s*ve/gi, "creative")
-        .replace(/analy\s*[\u00ffŸ]\s*cal/gi, "analytical")
-        .replace(/Educa\s*[\u00ffŸ]\s*on/gi, "Education")
-        .replace(/Communica\s*[\u00ffŸ]\s*on/gi, "Communication")
-        .replace(/opera\s*[\u00ffŸ]\s*ng/gi, "operating")
-        .replace(/opera\s*[\u00ffŸ]\s*on/gi, "operation")
-        .replace(/collabora\s*[\u00ffŸ]\s*ve/gi, "collaborative")
-        .replace(/Recommenda\s*[\u00ffŸ]\s*on/gi, "Recommendation")
-        .replace(/Ques\s*[\u00ffŸ]\s*ons/gi, "Questions")
-        .replace(/Yuk\s*[\u00ffŸ]\s*/gi, "Yukt")
-        // Strip out noisy special unicode artifacts
-        .replace(/[\u0080-\u009F\u00A0\u200B-\u200D\uFEFF]/g, " ")
-        .replace(/[•\u2022\u25CF\u25AA\u25E6\u25A0]/g, "\n")
-        .replace(/[ \t]+/g, " ");
-    }
-
-    function extractCleanSentences(text) {
-      const lines = text.split(/\n+/);
-      const candidates = [];
-
-      for (let line of lines) {
-        line = line.trim();
-        // Skip contact lines, links, raw headers
-        if (!line || line.length < 20) continue;
-        if (/^(phone|email|gmail|linkedin|github|contact|address|\+?\d{2,})/i.test(line)) continue;
-        if (/^(page\s*)?\d+(\s*(of|\/)\s*\d+)?$/i.test(line)) continue;
-
-        // Split sentences cleanly on punctuation while respecting abbreviations
-        const sub = line.split(/(?<=[.!?])\s+(?=[A-Z0-9])/);
-        for (let s of sub) {
-          s = s.trim().replace(/^[-–—•*]\s*/, "");
-          if (s.length >= 25 && s.split(/\s+/).length >= 5) {
-            candidates.push(s);
-          }
-        }
-      }
-      return candidates;
-    }
-
- async function runAiSummarizerClient(file) {
+    async function runAiSummarizerClient(file) {
       let rawText = "";
       let pageCount = null;
 
       if (file.name.toLowerCase().endsWith(".pdf")) {
         const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdfDoc = await loadingTask.promise;
         pageCount = pdfDoc.numPages;
 
         for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -875,13 +827,19 @@
         rawText = await file.text();
       }
 
-      // Basic cleanup to remove raw byte anomalies
-      const clean = cleanExtractedText(rawText);
+      // Basic cleanup for odd characters/spacing
+      const clean = rawText
+        .replace(/\u00ff|\u0178|\uFB01/g, "fi")
+        .replace(/(\w)\s*[\u00df-\u00ff]\s*(\w)/g, "$1ti$2")
+        .replace(/[•\u2022\u25CF\u25AA\u25E6\u25A0]/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .trim();
+
       if (clean.length < 30) {
         throw new Error("No readable text found in document to summarize.");
       }
 
-      // Call our Render backend AI endpoint
+      // Call our Render backend Gemini route
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -895,7 +853,7 @@
 
       const { summary } = await res.json();
 
-      // Build the formatted PDF with the AI prose
+      // Build the formatted PDF report
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const M = 20, W = 170, BOTTOM = 275;
@@ -923,7 +881,7 @@
       doc.line(M, y, M + W, y);
       y += 10;
 
-      // Render markdown sections cleanly
+      // Render Markdown sections cleanly
       const lines = summary.split("\n");
       for (let rawLine of lines) {
         const line = rawLine.trim();
@@ -961,6 +919,83 @@
       }
 
       doc.save("Summary_" + file.name.replace(/\.[^/.]+$/, "") + ".pdf");
+    }
+
+    async function runImageToPdfClient(file) {
+      const { jsPDF } = window.jspdf;
+      const dataUrl = await new Promise(r => {
+        const reader = new FileReader();
+        reader.onload = e => r(e.target.result);
+        reader.readAsDataURL(file);
+      });
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise(r => img.onload = r);
+      const doc = new jsPDF();
+      doc.addImage(dataUrl, 'JPEG', 15, 15, 180, 180 * (img.height / img.width));
+      doc.save(file.name.replace(/\.[^/.]+$/, "") + ".pdf");
+    }
+
+    function triggerDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function triggerAutoReset() {
+      const toast = document.getElementById("reset-toast");
+      const countdownEl = document.getElementById("countdown-val");
+      let count = 3;
+      toast.classList.remove("translate-y-[-100px]", "opacity-0");
+      toast.classList.add("translate-y-0", "opacity-100");
+      countdownEl.textContent = count;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownEl.textContent = count;
+        } else {
+          clearInterval(timer);
+          toast.classList.add("translate-y-[-100px]", "opacity-0");
+          toast.classList.remove("translate-y-0", "opacity-100");
+          clearQueue();
+        }
+      }, 1000);
+    }
+
+    function initTheme() {
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+        document.getElementById('theme-icon-sun').classList.remove('hidden');
+        document.getElementById('theme-icon-moon').classList.add('hidden');
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.theme = isDark ? 'dark' : 'light';
+      document.getElementById('theme-icon-sun').classList.toggle('hidden', !isDark);
+      document.getElementById('theme-icon-moon').classList.toggle('hidden', isDark);
+    }
+
+    const MODALS = {
+      'security-modal': { title: 'Security Architecture', body: '<p>All uploaded documents undergo in-memory transformation and are immediately purged from disk once the download stream concludes.</p>' },
+      'privacy-modal': { title: 'Privacy Policy', body: '<p>Zero persistent storage, zero telemetry logs, and zero retention of document bytes.</p>' }
+    };
+
+    function openModal(k) {
+      document.getElementById("modal-title").textContent = MODALS[k].title;
+      document.getElementById("modal-body").innerHTML = MODALS[k].body;
+      document.getElementById("modal-container").classList.remove("hidden");
+    }
+
+    function closeModal() {
+      document.getElementById("modal-container").classList.add("hidden");
     }
   </script>
 </body>
