@@ -805,33 +805,183 @@
       triggerDownload(blob, "DocGrid_" + file.name);
     }
 
-    // Client AI Summarizer
+    // =====================================================================
+    // HIGH-ACCURACY AI SUMMARIZER ENGINE (TF Scoring + Cues + Stats)
+    // =====================================================================
+    const SUM_STOP = new Set(("the and is in to of a with for as on that this by an be are from at it was or which will have has had were been not but if so than then there their they them its into out about over also can could would should may might more most other some such only own same too very just any all each both few many much our your you his her him she he we i me my what when where who whom why how these those while during before after above below between through under again further once here both being does did doing do up down off per via within without across among against upon whether however therefore thus etc").split(" "));
+
+    function splitSentences(text) {
+      const protectedText = text
+        .replace(/\r/g, "")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\b(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|Inc|Ltd|Co|No|Fig|approx|est)\./g, "$1\u0002")
+        .replace(/\b(e\.g|i\.e)\./gi, "$1\u0002");
+      const out = [];
+      protectedText.split(/\n+/).forEach(para => {
+        para = para.trim();
+        if (!para) return;
+        para.replace(/([.!?]["')\]]?)\s+(?=[A-Z0-9"\u201C(\[\u2022])/g, "$1\u0001")
+          .split("\u0001")
+          .forEach(s => {
+            s = s.replace(/\u0002/g, ".").trim();
+            if (s) out.push(s);
+          });
+      });
+      return out;
+    }
+
+    function summarizeText(text) {
+      const tokenize = s => (s.toLowerCase().match(/[\p{L}][\p{L}'\u2019-]{2,}/gu) || []);
+      const allTokens = tokenize(text);
+
+      const seen = new Set();
+      let sentences = splitSentences(text).filter(s => {
+        const letters = (s.match(/\p{L}/gu) || []).length;
+        const words = s.split(/\s+/).length;
+        if (words < 5 || letters / s.length < 0.5 || s.length < 25) return false;
+        if (/^(page\s*)?\d+(\s*(of|\/)\s*\d+)?$/i.test(s)) return false;
+        if (/\/MediaBox|endobj|^https?:\/\/\S+$/i.test(s)) return false;
+        const key = s.toLowerCase().replace(/\W+/g, " ").trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).map(s => s.length > 600 ? s.substring(0, 600).replace(/\s+\S*$/, "") + "..." : s);
+
+      const freq = {};
+      allTokens.forEach(w => { if (!SUM_STOP.has(w)) freq[w] = (freq[w] || 0) + 1; });
+      const maxF = Math.max(1, ...Object.values(freq));
+
+      const cue = /\b(in conclusion|overall|therefore|in summary|key|important|significant|result|conclude|objective|aim|purpose|main|critical|essential)\b/i;
+      const total = sentences.length;
+      const scored = sentences.map((s, i) => {
+        const toks = tokenize(s);
+        const uniq = new Set(toks.filter(w => !SUM_STOP.has(w)));
+        let sc = 0;
+        uniq.forEach(w => { sc += (freq[w] || 0) / maxF; });
+        sc = sc / Math.sqrt(toks.length || 1);
+        if (i < Math.max(2, total * 0.1)) sc *= 1.15;
+        if (i >= total - 2) sc *= 1.05;
+        if (/\d/.test(s)) sc *= 1.08;
+        if (cue.test(s)) sc *= 1.15;
+        return { i, s, sc, set: uniq };
+      });
+
+      const target = Math.min(total, Math.max(4, Math.min(10, Math.round(total * 0.12))));
+      const picked = [];
+      [...scored].sort((a, b) => b.sc - a.sc).forEach(c => {
+        if (picked.length >= target) return;
+        const dup = picked.some(p => {
+          let inter = 0;
+          c.set.forEach(w => { if (p.set.has(w)) inter++; });
+          const union = c.set.size + p.set.size - inter;
+          return union > 0 && inter / union > 0.6;
+        });
+        if (!dup) picked.push(c);
+      });
+      picked.sort((a, b) => a.i - b.i);
+
+      const pickedIdx = new Set(picked.map(p => p.i));
+      const statRe = /%|\$|\u20B9|\u20AC|\u00A3|\b(19|20)\d{2}\b|\d[\d,.]*\s?(million|billion|trillion|crore|lakh|thousand|k|m|bn)\b|\b\d{2,}[\d,.]*\b/i;
+      const stats = scored
+        .filter(c => !pickedIdx.has(c.i) && statRe.test(c.s) && c.s.length < 300)
+        .sort((a, b) => b.sc - a.sc).slice(0, 5)
+        .sort((a, b) => a.i - b.i);
+
+      const terms = Object.entries(freq).filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).slice(0, 8)
+        .map(([w]) => w.charAt(0).toUpperCase() + w.slice(1));
+
+      return {
+        bullets: picked.map(p => p.s),
+        stats: stats.map(p => p.s),
+        terms,
+        wordCount: (text.match(/\S+/g) || []).length,
+        sentenceCount: total
+      };
+    }
+
     async function runAiSummarizerClient(file) {
-      const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-      const pdfDoc = await loadingTask.promise;
-      let text = "";
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const tc = await page.getTextContent();
-        text += tc.items.map(it => it.str).join(" ") + " ";
+      let rawText = "";
+      let pageCount = null;
+
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdfDoc = await loadingTask.promise;
+        pageCount = pdfDoc.numPages;
+
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const tc = await page.getTextContent();
+          rawText += tc.items.map(it => it.str).join(" ") + "\n";
+        }
+      } else {
+        rawText = await file.text();
       }
-      const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-      const valid = sentences.filter(s => s.length > 25).slice(0, 4);
+
+      const clean = rawText.replace(/[ \t]+/g, " ").trim();
+      if (clean.length < 40) {
+        throw new Error("No readable text found in document to summarize.");
+      }
+
+      const r = summarizeText(clean);
+      if (!r.bullets.length) {
+        throw new Error("The document does not contain enough full sentences to summarize.");
+      }
+
+      const readMins = Math.max(1, Math.round(r.wordCount / 220));
+      const meta = `Analyzed Document: ${file.name} | Total Words: ${r.wordCount}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | ~${readMins} min read`;
+      const outName = "Summary_" + file.name.replace(/\.[^/.]+$/, "");
 
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      doc.setFont("helvetica", "bold");
-      doc.text("Executive Summary: " + file.name, 20, 20);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      let y = 35;
-      valid.forEach((s, idx) => {
-        const lines = doc.splitTextToSize(`${idx + 1}. ${s.trim()}`, 170);
-        doc.text(lines, 20, y);
-        y += (lines.length * 6) + 3;
-      });
-      doc.save("Summary_" + file.name.replace(/\.[^/.]+$/, "") + ".pdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const M = 20, W = 170, BOTTOM = 280;
+      let y = 25;
+
+      const ensure = (h) => {
+        if (y + h > BOTTOM) { doc.addPage(); y = 25; }
+      };
+
+      const heading = (t) => {
+        ensure(14);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(30, 41, 59);
+        doc.text(t, M, y); y += 8;
+      };
+
+      const paragraph = (t, bullet) => {
+        doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(51, 65, 85);
+        const lines = doc.splitTextToSize(t, W - (bullet ? 5 : 0));
+        lines.forEach((ln, k) => {
+          ensure(6);
+          if (bullet && k === 0) doc.text("\u2022", M, y);
+          doc.text(ln, M + (bullet ? 5 : 0), y);
+          y += 5.5;
+        });
+        y += 3;
+      };
+
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(30, 41, 59);
+      doc.text("DocGrid AI Intelligence Executive Summary", M, y); y += 8;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
+      doc.splitTextToSize(meta, W).forEach(ln => { doc.text(ln, M, y); y += 4.5; });
+      y += 1;
+      doc.setDrawColor(226, 232, 240); doc.line(M, y, M + W, y); y += 10;
+
+      heading("Key Findings & Extracted Points:");
+      r.bullets.forEach((b, i) => paragraph(`${i + 1}. ${b}`, false));
+
+      if (r.stats.length) {
+        y += 2;
+        heading("Key Figures & Statistics:");
+        r.stats.forEach(s => paragraph(s, true));
+      }
+
+      if (r.terms.length) {
+        y += 2;
+        heading("Key Terms:");
+        paragraph(r.terms.join(", "), false);
+      }
+
+      doc.save(outName + ".pdf");
     }
 
     async function runImageToPdfClient(file) {
