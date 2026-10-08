@@ -12,6 +12,11 @@ const PORT = process.env.PORT || 3000;
 // Enable CORS for Vercel deployment
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+app.use(express.static(__dirname));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Multi-file temporary upload directory
 const uploadDir = path.join('/tmp', 'docgrid-uploads');
