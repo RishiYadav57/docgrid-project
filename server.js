@@ -11,9 +11,10 @@ const PORT = process.env.PORT || 3000;
 
 // Enable CORS for Vercel deployment
 app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(express.static(__dirname));
+// Large limit: the browser sends the full extracted document text for summarizing
+app.use(express.json({ limit: '10mb' }));
 
+// Serve only the front-end page (not the server source files)
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -43,9 +44,119 @@ function safeUnlink(filePath) {
 }
 
 // Health Check
+let workingGeminiModel = null;
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', engine: 'LibreOffice Headless + Poppler' });
+  res.json({
+    status: 'ok',
+    engine: 'LibreOffice Headless + Poppler',
+    geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+    geminiModel: workingGeminiModel
+  });
 });
+
+// =====================================================================
+// GEMINI HELPERS
+// Models get retired often, so we try several in order, remember the one
+// that works, and as a last resort ask Google which models are available.
+// You can force a model by setting GEMINI_MODEL in Render's environment.
+// =====================================================================
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+const PREFERRED_MODELS = [
+  process.env.GEMINI_MODEL,
+  'gemini-3-flash-preview',
+  'gemini-flash-latest',
+  'gemini-2.5-flash',
+  'gemini-3.1-flash-lite-preview'
+].filter(Boolean);
+
+async function callGemini(model, prompt, apiKey) {
+  const response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, data };
+}
+
+function extractText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  return parts
+    .filter((p) => typeof p.text === 'string' && !p.thought)
+    .map((p) => p.text)
+    .join('')
+    .trim();
+}
+
+async function discoverModel(apiKey, alreadyTried) {
+  const r = await fetch(`${GEMINI_BASE}/models?pageSize=200`, {
+    headers: { 'x-goog-api-key': apiKey }
+  });
+  const d = await r.json().catch(() => ({}));
+  const names = (d.models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m) => m.name.replace('models/', ''))
+    .filter((n) => /^gemini-/.test(n))
+    .filter((n) => !/(image|tts|audio|live|embedding|robotics|computer-use|vision|learnlm|aqa|imagen|veo)/.test(n))
+    .filter((n) => !alreadyTried.includes(n))
+    .sort()
+    .reverse();
+  return names.find((n) => /flash/.test(n) && !/lite/.test(n)) || names.find((n) => /flash/.test(n)) || names[0] || null;
+}
+
+async function generateSummary(prompt, apiKey) {
+  const order = [...new Set([workingGeminiModel, ...PREFERRED_MODELS].filter(Boolean))];
+  const tried = [];
+  let lastMessage = 'Gemini API request failed.';
+
+  const attempt = async (model) => {
+    tried.push(model);
+    const result = await callGemini(model, prompt, apiKey);
+
+    if (result.ok) {
+      const text = extractText(result.data);
+      if (text) {
+        workingGeminiModel = model;
+        return { text };
+      }
+      const reason = result.data?.promptFeedback?.blockReason || result.data?.candidates?.[0]?.finishReason || 'empty response';
+      lastMessage = `Gemini returned no text (${reason}).`;
+      return { retry: true };
+    }
+
+    lastMessage = result.data?.error?.message || `Gemini error ${result.status}`;
+    console.error(`Gemini model ${model} failed (${result.status}):`, lastMessage);
+
+    // Model retired / unavailable / busy / out of quota on this model: try the next one
+    if ([404, 429, 500, 503].includes(result.status)) {
+      if (model === workingGeminiModel) workingGeminiModel = null;
+      return { retry: true };
+    }
+    // Bad key, blocked key, malformed request: trying other models will not help
+    throw new Error(lastMessage);
+  };
+
+  for (const model of order) {
+    const out = await attempt(model);
+    if (out.text) return out.text;
+  }
+
+  // Last resort: ask Google which models this key can use
+  const discovered = await discoverModel(apiKey, tried);
+  if (discovered) {
+    const out = await attempt(discovered);
+    if (out.text) return out.text;
+  }
+
+  throw new Error(lastMessage);
+}
 
 // AI EXECUTIVE SUMMARIZER (Powered by Google Gemini)
 app.post('/api/summarize', async (req, res) => {
@@ -75,27 +186,10 @@ Write in natural, complete, human-readable sentences. Follow this exact format:
 
 Document content:
 """
-${text.slice(0, 15000)}
+${text.slice(0, 30000)}
 """`;
 
-const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 1000 }
-        })
-      }
-    );
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'Gemini API request failed.');
-    }
-
-    const aiSummary = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const aiSummary = await generateSummary(prompt, apiKey);
     res.json({ summary: aiSummary });
   } catch (err) {
     console.error('Summarization error:', err);
