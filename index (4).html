@@ -1,0 +1,1843 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>DocGrid | Professional Document & PDF Processing Engine</title>
+  <meta name="description" content="Merge, convert, compress, and translate documents with 1:1 pixel accuracy.">
+
+  <!-- Tailwind CSS & Plus Jakarta Sans -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              800: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Mozilla PDF.js (reading/rendering), jsPDF (summary report), pdf-lib (page tools), JSZip (zip downloads) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+    .docgrid-bg {
+      background-color: #f8fafc;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(2, 132, 199, 0.05) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.04) 0px, transparent 50%),
+        linear-gradient(to right, rgba(226, 232, 240, 0.6) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(226, 232, 240, 0.6) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    }
+    .dark .docgrid-bg {
+      background-color: #0b1120;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(2, 132, 199, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+        linear-gradient(to right, rgba(30, 41, 59, 0.6) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(30, 41, 59, 0.6) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+    }
+    .mega-menu-panel {
+      background-color: #ffffff !important;
+      opacity: 1 !important;
+      box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.22);
+    }
+    .dark .mega-menu-panel {
+      background-color: #0f172a !important;
+      opacity: 1 !important;
+      box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.7);
+    }
+    .card-frame {
+      border: 1px solid #e2e8f0;
+      border-radius: 1.25rem;
+      background: #ffffff;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+    .dark .card-frame {
+      border-color: #1e293b;
+      background: #0f172a;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+    }
+    .inner-dashed-box {
+      border: 1.5px dashed #cbd5e1;
+      border-radius: 0.875rem;
+      transition: all 0.2s ease-in-out;
+    }
+    .dark .inner-dashed-box { border-color: #334155; }
+    .inner-dashed-box:hover {
+      border-color: #0284c7;
+      background-color: rgba(2, 132, 199, 0.02);
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="docgrid-bg text-slate-800 dark:text-slate-100 min-h-screen flex flex-col selection:bg-brand-500 selection:text-white transition-colors duration-200 overflow-x-hidden">
+
+  <!-- Top Announcement Bar -->
+  <aside aria-label="Privacy standard" class="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 text-[11px] py-1.5 px-4">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          DocGrid High-Fidelity Engine Active
+        </span>
+        <span class="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+        <span class="text-slate-500 dark:text-slate-400 whitespace-nowrap hidden sm:inline">LibreOffice Native Architecture</span>
+      </div>
+      <div class="flex items-center gap-4 text-slate-500 dark:text-slate-400">
+        <button onclick="openModal('security-modal')" class="hover:text-brand-600 dark:hover:text-brand-400 underline decoration-slate-300">Security Specs</button>
+        <button onclick="openModal('privacy-modal')" class="hover:text-brand-600 dark:hover:text-brand-400 underline decoration-slate-300">Privacy Policy</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Global Header Navigation -->
+  <header class="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm w-full">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-14 gap-2 sm:gap-4">
+        
+        <!-- Brand Logo & Mobile Drawer Toggle -->
+        <div class="flex items-center gap-2.5 flex-shrink-0">
+          <button onclick="toggleMobileDrawer()" class="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition" aria-label="Open Navigation Menu">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+
+          <a href="#/tool/pdf-to-word" onclick="loadTool('pdf-to-word')" class="flex items-center gap-2.5 group">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-sm group-hover:scale-105 transition-transform">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            </div>
+            <span class="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">DocGrid</span>
+          </a>
+        </div>
+
+        <!-- Desktop Categories -->
+        <nav class="hidden lg:flex items-center space-x-1" id="nav-categories"></nav>
+
+        <!-- Right Controls: Search & Theme -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <div class="relative">
+            <div class="flex items-center bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 transition">
+              <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <input type="text" id="tool-search-input" placeholder="Search tools..." oninput="handleToolSearch(this.value)" class="bg-transparent border-none text-xs text-slate-800 dark:text-slate-100 focus:outline-none px-2 w-24 sm:w-36 md:w-44 placeholder:text-slate-400">
+              <span class="text-[9px] font-mono text-slate-400 bg-white dark:bg-slate-700 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 hidden sm:inline-block">/</span>
+            </div>
+
+            <div id="search-results-dropdown" class="mega-menu-panel absolute right-0 top-full mt-1.5 w-72 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 z-50 hidden max-h-72 overflow-y-auto"></div>
+          </div>
+
+          <button onclick="toggleTheme()" class="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Toggle Theme">
+            <svg id="theme-icon-sun" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg id="theme-icon-moon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile Horizontal Category Pills -->
+      <div class="lg:hidden flex items-center gap-1.5 overflow-x-auto py-2 no-scrollbar border-t border-slate-100 dark:border-slate-800/80" id="mobile-pills-container"></div>
+    </div>
+  </header>
+
+  <!-- Mobile Slide-Over Navigation Drawer -->
+  <div id="mobile-drawer" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden transition-opacity duration-200">
+    <div class="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-5 shadow-2xl flex flex-col justify-between overflow-y-auto">
+      <div>
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold text-xs">D</div>
+            <span class="font-bold text-slate-900 dark:text-white">Tool Directory</span>
+          </div>
+          <button onclick="toggleMobileDrawer()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white text-base font-bold">✕</button>
+        </div>
+        <div id="mobile-drawer-categories" class="space-y-4"></div>
+      </div>
+      <div class="pt-4 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
+        Enterprise 1:1 Rendering Suite
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-Reset Floating Toast Notification -->
+  <div id="reset-toast" class="fixed top-20 right-6 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="px-4 py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl flex items-center gap-3 border border-slate-700 dark:border-slate-200 max-w-xs">
+      <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping flex-shrink-0"></div>
+      <div class="text-xs font-medium">
+        <span id="toast-msg" class="font-bold">Download complete!</span> Ready for next document in <span id="countdown-val" class="font-mono font-bold text-emerald-400 dark:text-emerald-600">3</span>s...
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN WORKSPACE VIEWPORT -->
+  <div class="flex-grow max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5 flex gap-6 items-start justify-center">
+    
+    <!-- Left Skyscraper (Desktop 160x600) -->
+    <aside aria-label="Left advertisement" class="hidden xl:block w-40 flex-shrink-0 sticky top-20">
+      <div class="w-full bg-slate-100 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-2 text-center h-[560px] flex flex-col items-center justify-between">
+        <span class="text-[9px] uppercase font-mono tracking-wider text-slate-400">AdSense Vertical</span>
+        <div class="text-[10px] text-slate-400 font-mono flex items-center justify-center flex-grow">[160x600 Ad Unit]</div>
+        <span class="text-[9px] text-slate-400 font-mono">ca-pub-ready</span>
+      </div>
+    </aside>
+
+    <!-- Center Workspace -->
+    <main class="w-full max-w-[960px] space-y-5">
+      
+      <!-- Polished Hero Header -->
+      <div class="text-center pt-1 pb-1">
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          Effortless Document Tools. <span class="text-brand-600 dark:text-brand-400">100% Exact Rendering.</span>
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-lg mx-auto">
+          Enterprise conversion engine preserving all certificates, tables, graphics, and custom fonts.
+        </p>
+      </div>
+
+      <!-- MAIN TOOL WORKSPACE CONTAINER -->
+      <div class="card-frame p-5 sm:p-7 space-y-4">
+        
+        <!-- Tool Title Bar & Mode Toggle -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div class="flex items-center gap-3">
+            <div id="tool-icon-box" class="w-9 h-9 rounded-xl bg-brand-50 dark:bg-slate-800 border border-brand-100 dark:border-slate-700 text-brand-600 dark:text-brand-400 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 id="tool-title" class="text-lg font-bold text-slate-900 dark:text-white">PDF to WORD</h2>
+                <span id="tool-format-badge" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">.PDF</span>
+              </div>
+              <p id="tool-description" class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">Convert PDF documents into editable Word text files.</p>
+            </div>
+          </div>
+
+          <div id="mode-toggle" class="flex items-center self-start sm:self-auto bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 flex-shrink-0">
+            <button id="btn-mode-single" onclick="setProcessingMode('single')" class="px-3 py-1.5 rounded-md text-xs font-bold transition bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs">
+              Single File
+            </button>
+            <button id="btn-mode-batch" onclick="setProcessingMode('batch')" class="px-3 py-1.5 rounded-md text-xs font-bold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+              Batch Processing
+            </button>
+          </div>
+        </div>
+
+        <!-- Inner Dashed Dropzone Card -->
+        <div id="dropzone" class="relative group inner-dashed-box p-8 sm:p-10 text-center cursor-pointer">
+          <input type="file" id="file-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" multiple>
+          
+          <div class="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+            <div class="w-12 h-12 rounded-xl bg-brand-50 dark:bg-slate-800 text-brand-600 dark:text-brand-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+              </svg>
+            </div>
+            
+            <div>
+              <div class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Drop your files here to start <span id="dropzone-action-name" class="text-brand-600 dark:text-brand-400">PDF to WORD</span>
+              </div>
+              <p id="dropzone-hint" class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Drag and drop files here, or click the button below to browse
+              </p>
+            </div>
+
+            <div class="pt-1">
+              <button type="button" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md shadow-brand-500/20 transition flex items-center gap-1.5 pointer-events-auto">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <span>Select Files from Device</span>
+              </button>
+            </div>
+
+            <div class="text-[10px] font-mono text-slate-400 pt-1">
+              Protected by Enterprise In-Memory Processing Sandbox
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Tool Controls -->
+        <div id="dynamic-controls" class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 hidden"></div>
+
+        <!-- File Queue Section -->
+        <div id="file-queue-section" class="border border-slate-200 dark:border-slate-800 rounded-xl p-4 hidden space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-900 dark:text-white">Selected Document</span>
+              <span id="queue-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 dark:bg-slate-800 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-slate-700">0 Files</span>
+              <span id="queue-size-badge" class="text-[11px] text-slate-400 font-mono">0 KB</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <button id="btn-add-more" onclick="document.getElementById('file-input').click()" class="hidden text-[11px] text-brand-600 dark:text-brand-400 hover:underline font-semibold">+ Add more files</button>
+              <button onclick="clearQueue()" class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold">Clear All</button>
+            </div>
+          </div>
+
+          <div id="file-list" class="space-y-1.5 max-h-56 overflow-y-auto pr-1"></div>
+
+          <div class="pt-2 flex items-center justify-end">
+            <button id="btn-process-now" onclick="executeCurrentTool()" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md shadow-brand-500/25 transition flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              <span>Convert & Download</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Mobile-Only 8 Quick-Access Grid -->
+      <div class="lg:hidden card-frame p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Top Mobile Tools</span>
+          <span class="text-[10px] text-slate-400">1-Tap Switch</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2" id="mobile-quick-grid"></div>
+      </div>
+
+      <!-- Editorial Guide & Security Specs -->
+      <section class="card-frame p-6 sm:p-8 space-y-6">
+        <div>
+          <h2 id="editorial-guide-heading" class="text-base font-bold text-slate-900 dark:text-white">How to Use This Tool in 3 Steps</h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <span class="w-6 h-6 rounded-md bg-brand-600 text-white font-mono font-bold text-[10px] flex items-center justify-center mb-2">01</span>
+              <h3 class="text-xs font-bold text-slate-900 dark:text-white">Upload Document</h3>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Select files from your device. Processing occurs in an isolated sandbox.</p>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <span class="w-6 h-6 rounded-md bg-brand-600 text-white font-mono font-bold text-[10px] flex items-center justify-center mb-2">02</span>
+              <h3 class="text-xs font-bold text-slate-900 dark:text-white">Exact Compilation</h3>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Full font mapping, table coordinates, and graphics are rendered 1:1.</p>
+            </div>
+            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <span class="w-6 h-6 rounded-md bg-brand-600 text-white font-mono font-bold text-[10px] flex items-center justify-center mb-2">03</span>
+              <h3 class="text-xs font-bold text-slate-900 dark:text-white">Direct Download</h3>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Download immediately. Auto-refresh keeps your selected tool ready.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Right Skyscraper (Desktop 160x600) -->
+    <aside aria-label="Right advertisement" class="hidden xl:block w-40 flex-shrink-0 sticky top-20">
+      <div class="w-full bg-slate-100 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-2 text-center h-[560px] flex flex-col items-center justify-between">
+        <span class="text-[9px] uppercase font-mono tracking-wider text-slate-400">AdSense Vertical</span>
+        <div class="text-[10px] text-slate-400 font-mono flex items-center justify-center flex-grow">[160x600 Ad Unit]</div>
+        <span class="text-[9px] text-slate-400 font-mono">ca-pub-ready</span>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Multi-Column Footer -->
+  <footer class="mt-12 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-10">
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8" id="footer-categories"></div>
+      <div class="pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
+        <div>© 2026 DocGrid. High-Fidelity Document Processing Architecture.</div>
+        <div class="flex items-center gap-4">
+          <button onclick="openModal('privacy-modal')" class="hover:underline">Privacy</button>
+          <button onclick="openModal('terms-modal')" class="hover:underline">Terms</button>
+          <button onclick="openModal('about-modal')" class="hover:underline">About</button>
+          <button onclick="openModal('contact-modal')" class="hover:underline">Contact</button>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modals Container -->
+  <div id="modal-container" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <h3 id="modal-title" class="text-sm font-bold text-slate-900 dark:text-white">Modal</h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+      </div>
+      <div id="modal-body" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed space-y-2.5"></div>
+      <div class="pt-3 border-t border-slate-100 dark:border-slate-800 text-right">
+        <button onclick="closeModal()" class="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-200">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // BACKEND API ENDPOINT CONFIGURATION
+    const BACKEND_URL = window.location.hostname === 'localhost' 
+      ? 'http://localhost:3000' 
+      : 'https://docgrid-project.onrender.com';
+
+    const TOOL_CATEGORIES = [
+      {
+        id: "organize",
+        name: "Organize PDF",
+        tools: [
+          { id: "merge-pdf", name: "Merge PDF", ext: ".pdf", desc: "Combine multiple PDF files into one clean document." },
+          { id: "split-pdf", name: "Split PDF", ext: ".pdf", desc: "Separate pages into individual documents in a .zip." },
+          { id: "remove-pages", name: "Remove pages", ext: ".pdf", desc: "Select and delete specific pages from any PDF." },
+          { id: "extract-pages", name: "Extract pages", ext: ".pdf", desc: "Pull chosen individual pages into an isolated PDF." },
+          { id: "organize-pdf", name: "Organize PDF", ext: ".pdf", desc: "Sort, reorder, or delete pages visually." }
+        ]
+      },
+      {
+        id: "optimize",
+        name: "Optimize PDF",
+        tools: [
+          { id: "compress-pdf", name: "Compress PDF", ext: ".pdf", desc: "Reduce PDF file size while optimizing quality." },
+          { id: "repair-pdf", name: "Repair PDF", ext: ".pdf", desc: "Rebuild and recover corrupt or damaged PDF structures." }
+        ]
+      },
+      {
+        id: "convert-to",
+        name: "Convert to PDF",
+        tools: [
+          { id: "word-to-pdf", name: "WORD to PDF", ext: ".docx", desc: "1:1 Exact conversion of DOCX files into formatted PDF documents." },
+          { id: "powerpoint-to-pdf", name: "POWERPOINT to PDF", ext: ".pptx", desc: "1:1 Exact conversion of PPTX presentations with all graphics intact." },
+          { id: "excel-to-pdf", name: "EXCEL to PDF", ext: ".xlsx,.csv", desc: "Transform spreadsheets and tables into formatted PDF sheets." },
+          { id: "jpg-to-pdf", name: "JPG to PDF", ext: ".jpg,.jpeg,.png,.webp", desc: "Convert JPG and PNG images with aspect fitting." }
+        ]
+      },
+      {
+        id: "convert-from",
+        name: "Convert from PDF",
+        tools: [
+          { id: "pdf-to-word", name: "PDF to WORD", ext: ".pdf", desc: "Convert PDF documents into editable Word text files." },
+          { id: "pdf-to-jpg", name: "PDF to JPG", ext: ".pdf", desc: "Extract PDF pages into high-resolution JPG images." },
+          { id: "pdf-to-powerpoint", name: "PDF to POWERPOINT", ext: ".pdf", desc: "Convert PDF pages into presentation slides." },
+          { id: "pdf-to-excel", name: "PDF to EXCEL", ext: ".pdf", desc: "Extract structured PDF tables directly into spreadsheets." }
+        ]
+      },
+      {
+        id: "security",
+        name: "PDF Security",
+        tools: [
+          { id: "unlock-pdf", name: "Unlock PDF", ext: ".pdf", desc: "Remove owner permissions and restrictions." },
+          { id: "protect-pdf", name: "Protect PDF", ext: ".pdf", desc: "Encrypt your PDF with standard secure passwords." },
+          { id: "add-watermark", name: "Add Watermark", ext: ".pdf", desc: "Stamp high-visibility watermarks across all pages." }
+        ]
+      },
+      {
+        id: "intelligence",
+        name: "PDF Intelligence",
+        tools: [
+          { id: "ai-summarizer", name: "AI Summarizer", ext: ".pdf,.docx,.txt,.pptx", desc: "Synthesize full documents into key executive bullet points." },
+          { id: "translate-pdf", name: "Translate PDF", ext: ".pdf,.txt", desc: "Extract and translate document streams into other languages." }
+        ]
+      }
+    ];
+
+    const MOBILE_QUICK_TOOLS = [
+      { id: "pdf-to-word", name: "PDF to Word" },
+      { id: "word-to-pdf", name: "Word to PDF" },
+      { id: "powerpoint-to-pdf", name: "PPT to PDF" },
+      { id: "jpg-to-pdf", name: "JPG to PDF" },
+      { id: "merge-pdf", name: "Merge PDF" },
+      { id: "split-pdf", name: "Split PDF" },
+      { id: "compress-pdf", name: "Compress PDF" },
+      { id: "ai-summarizer", name: "AI Summarizer" }
+    ];
+
+    // Tools that need a fixed mode: merge/jpg-to-pdf take many files at once, organize works on exactly one
+    const FORCED_MODE = { "merge-pdf": "batch", "jpg-to-pdf": "batch", "organize-pdf": "single" };
+
+    const DROP_HINTS = {
+      "merge-pdf": "Select two or more PDF files. You can add more and change their order below.",
+      "jpg-to-pdf": "Select one or more images. They become the pages of one PDF, in the order shown below."
+    };
+
+    const ACTION_LABELS = {
+      "merge-pdf": "Merge & Download",
+      "split-pdf": "Split & Download",
+      "remove-pages": "Remove Pages & Download",
+      "extract-pages": "Extract Pages & Download",
+      "organize-pdf": "Save PDF & Download",
+      "compress-pdf": "Compress & Download",
+      "repair-pdf": "Repair & Download",
+      "unlock-pdf": "Unlock & Download",
+      "protect-pdf": "Protect & Download",
+      "add-watermark": "Add Watermark & Download",
+      "ai-summarizer": "Summarize & Download",
+      "translate-pdf": "Translate & Download"
+    };
+
+    const TRANSLATE_LANGS = [
+      ["en", "English"], ["hi", "Hindi"], ["te", "Telugu"], ["ta", "Tamil"], ["kn", "Kannada"],
+      ["ml", "Malayalam"], ["bn", "Bengali"], ["mr", "Marathi"], ["gu", "Gujarati"], ["pa", "Punjabi"],
+      ["ur", "Urdu"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["pt", "Portuguese"],
+      ["it", "Italian"], ["ru", "Russian"], ["ar", "Arabic"], ["zh", "Chinese (Simplified)"],
+      ["ja", "Japanese"], ["ko", "Korean"]
+    ];
+
+    const SERVER_DOWN_MSG = "Could not reach the DocGrid server. It may be waking up, so wait about a minute and try again.";
+
+    let currentToolId = "pdf-to-word";
+    let processingMode = "single";
+    let fileQueue = [];
+    let modeForced = false;
+    let modeBeforeForce = "single";
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initTheme();
+      renderNavigation();
+      renderMobilePills();
+      renderMobileDrawer();
+      renderMobileQuickGrid();
+      renderFooter();
+      setupEvents();
+      setProcessingMode("single");
+
+      const hash = window.location.hash.replace("#/tool/", "");
+      if (hash && findTool(hash)) {
+        loadTool(hash);
+      } else {
+        loadTool("pdf-to-word");
+      }
+    });
+
+    // ------------------------------------------------------------------
+    // Small helpers
+    // ------------------------------------------------------------------
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function formatSize(b) {
+      if (b < 1024) return b + " B";
+      if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+      return (b / 1048576).toFixed(2) + " MB";
+    }
+
+    function baseName(file) {
+      return file.name.replace(/\.[^/.]+$/, "");
+    }
+
+    function getAllToolsFlat() {
+      const all = [];
+      TOOL_CATEGORIES.forEach(cat => {
+        cat.tools.forEach(tool => all.push({ ...tool, categoryName: cat.name }));
+      });
+      return all;
+    }
+
+    function findTool(id) {
+      for (const cat of TOOL_CATEGORIES) {
+        const t = cat.tools.find(x => x.id === id);
+        if (t) return { tool: t, category: cat };
+      }
+      return null;
+    }
+
+    function toolExts(toolId) {
+      const info = findTool(toolId);
+      return info ? info.tool.ext.split(",").map(s => s.trim().toLowerCase()) : [];
+    }
+
+    function handleToolSearch(query) {
+      const dropdown = document.getElementById("search-results-dropdown");
+      const cleanQ = query.trim().toLowerCase();
+      if (!cleanQ) {
+        dropdown.classList.add("hidden");
+        return;
+      }
+      const matches = getAllToolsFlat().filter(t => 
+        t.name.toLowerCase().includes(cleanQ) || 
+        t.desc.toLowerCase().includes(cleanQ) || 
+        t.categoryName.toLowerCase().includes(cleanQ)
+      );
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = `<div class="p-3 text-center text-xs text-slate-400">No tools found matching "${escapeHtml(query)}"</div>`;
+      } else {
+        dropdown.innerHTML = `
+          <div class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 mb-1">
+            Matching Tools (${matches.length})
+          </div>
+          <div class="space-y-0.5">
+            ${matches.map(t => `
+              <a href="#/tool/${t.id}" onclick="selectSearchedTool('${t.id}')" class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <div class="w-6 h-6 rounded bg-brand-50 dark:bg-slate-800 text-brand-600 dark:text-brand-400 font-bold font-mono text-[10px] flex items-center justify-center flex-shrink-0">
+                  ${t.name.charAt(0)}
+                </div>
+                <div class="truncate">
+                  <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">${t.name}</div>
+                  <div class="text-[10px] text-slate-400 truncate">${t.categoryName} •${t.ext}</div>
+                </div>
+              </a>
+            `).join('')}
+          </div>
+        `;
+      }
+      dropdown.classList.remove("hidden");
+    }
+
+    function selectSearchedTool(id) {
+      document.getElementById("search-results-dropdown").classList.add("hidden");
+      document.getElementById("tool-search-input").value = "";
+      loadTool(id);
+    }
+
+    function renderNavigation() {
+      const nav = document.getElementById("nav-categories");
+      nav.innerHTML = TOOL_CATEGORIES.map(cat => `
+        <div class="relative group py-3">
+          <button class="px-2 xl:px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 whitespace-nowrap">
+            <span>${cat.name}</span>
+            <svg class="w-3 h-3 text-slate-400 group-hover:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          
+          <div class="mega-menu-panel absolute left-0 top-full hidden group-hover:block w-64 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 z-50">
+            <div class="px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1">
+              <span class="text-[9px] font-bold uppercase tracking-wider text-slate-400">${cat.name}</span>
+            </div>
+            <div class="space-y-0.5 max-h-72 overflow-y-auto">
+              ${cat.tools.map(tool => `
+                <a href="#/tool/${tool.id}" onclick="loadTool('${tool.id}')" class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                  <div class="w-5 h-5 rounded bg-brand-50 dark:bg-slate-800 text-brand-600 dark:text-brand-400 flex items-center justify-center flex-shrink-0 text-[10px] font-bold font-mono">
+                    ${tool.name.charAt(0)}
+                  </div>
+                  <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">${tool.name}</div>
+                </a>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderMobilePills() {
+      const pillsContainer = document.getElementById("mobile-pills-container");
+      pillsContainer.innerHTML = TOOL_CATEGORIES.map(cat => `
+        <button onclick="loadTool('${cat.tools[0].id}')" class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 whitespace-nowrap flex-shrink-0 hover:bg-brand-50 hover:text-brand-600 transition">
+          ${cat.name}
+        </button>
+      `).join('');
+    }
+
+    function renderMobileDrawer() {
+      const drawerCats = document.getElementById("mobile-drawer-categories");
+      drawerCats.innerHTML = TOOL_CATEGORIES.map(cat => `
+        <div class="space-y-1.5">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 px-1">${cat.name}</div>
+          <div class="space-y-0.5">
+            ${cat.tools.map(tool => `
+              <a href="#/tool/${tool.id}" onclick="loadTool('${tool.id}'); toggleMobileDrawer();" class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-800 dark:text-slate-200 transition">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                <span>${tool.name}</span>
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderMobileQuickGrid() {
+      const grid = document.getElementById("mobile-quick-grid");
+      grid.innerHTML = MOBILE_QUICK_TOOLS.map(t => `
+        <button onclick="loadTool('${t.id}')" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-left hover:border-brand-500 bg-slate-50 dark:bg-slate-800/40 transition">
+          <div class="text-xs font-bold text-slate-800 dark:text-slate-200">${t.name}</div>
+        </button>
+      `).join('');
+    }
+
+    function toggleMobileDrawer() {
+      document.getElementById("mobile-drawer").classList.toggle("hidden");
+    }
+
+    function renderFooter() {
+      const footer = document.getElementById("footer-categories");
+      footer.innerHTML = TOOL_CATEGORIES.map(cat => `
+        <div class="space-y-2">
+          <span class="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[10px] block">${cat.name}</span>
+          <ul class="space-y-1">
+            ${cat.tools.map(tool => `
+              <li><a href="#/tool/${tool.id}" onclick="loadTool('${tool.id}')" class="hover:text-brand-600 dark:hover:text-brand-400 transition text-[11px]">${tool.name}</a></li>
+            `).join('')}
+          </ul>
+        </div>
+      `).join('');
+    }
+
+    function idleLabel() {
+      return ACTION_LABELS[currentToolId] || "Convert & Download";
+    }
+
+    const PROCESS_ICON = `<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`;
+
+    function setProcessButton(busy, label) {
+      const btn = document.getElementById("btn-process-now");
+      btn.disabled = busy;
+      btn.innerHTML = busy
+        ? `<span class="animate-spin">⚙</span><span>${escapeHtml(label)}</span>`
+        : `${PROCESS_ICON}<span>${escapeHtml(label)}</span>`;
+    }
+
+    function loadTool(toolId) {
+      const info = findTool(toolId);
+      if (!info) return;
+
+      currentToolId = toolId;
+      const { tool } = info;
+
+      document.getElementById("tool-title").textContent = tool.name;
+      document.getElementById("tool-format-badge").textContent = tool.ext;
+      document.getElementById("tool-description").textContent = tool.desc;
+      document.getElementById("dropzone-action-name").textContent = tool.name;
+      document.getElementById("file-input").accept = tool.ext;
+      document.getElementById("editorial-guide-heading").textContent = `How to use ${tool.name} in 3 Simple Steps`;
+      document.getElementById("dropzone-hint").textContent =
+        DROP_HINTS[toolId] || "Drag and drop files here, or click the button below to browse";
+
+      // Some tools need a fixed single / multi file mode
+      const forced = FORCED_MODE[toolId];
+      if (forced) {
+        if (!modeForced) modeBeforeForce = processingMode;
+        modeForced = true;
+        setProcessingMode(forced);
+      } else if (modeForced) {
+        modeForced = false;
+        setProcessingMode(modeBeforeForce);
+      }
+      document.getElementById("mode-toggle").classList.toggle("hidden", Boolean(forced));
+
+      renderCustomControls(toolId);
+      clearQueue();
+      setProcessButton(false, idleLabel());
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function setProcessingMode(mode) {
+      processingMode = mode;
+      const btnS = document.getElementById("btn-mode-single");
+      const btnB = document.getElementById("btn-mode-batch");
+      const fInput = document.getElementById("file-input");
+
+      if (mode === "single") {
+        btnS.className = "px-3 py-1.5 rounded-md text-xs font-bold transition bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs";
+        btnB.className = "px-3 py-1.5 rounded-md text-xs font-bold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+        fInput.removeAttribute("multiple");
+        if (fileQueue.length > 1) {
+          fileQueue = [fileQueue[0]];
+          renderQueue();
+        }
+      } else {
+        btnB.className = "px-3 py-1.5 rounded-md text-xs font-bold transition bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs";
+        btnS.className = "px-3 py-1.5 rounded-md text-xs font-bold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
+        fInput.setAttribute("multiple", "multiple");
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Tool-specific controls (shown between the dropzone and the file list)
+    // ------------------------------------------------------------------
+    const LABEL_CLS = "font-bold text-slate-900 dark:text-white";
+    const INPUT_CLS = "px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-brand-500 w-full sm:w-64";
+    const HINT_CLS = "text-[11px] text-slate-400";
+
+    function renderCustomControls(toolId) {
+      const container = document.getElementById("dynamic-controls");
+      let html = "";
+
+      switch (toolId) {
+        case "add-watermark":
+          html = `
+            <div class="flex items-center justify-between gap-3 text-xs">
+              <span class="${LABEL_CLS}">Watermark Text:</span>
+              <input type="text" id="ctrl-watermark" value="CONFIDENTIAL" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none w-48">
+            </div>`;
+          break;
+
+        case "split-pdf":
+          html = `
+            <div class="space-y-2 text-xs">
+              <div class="${LABEL_CLS}">Split mode</div>
+              <label class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                <input type="radio" name="split-mode" value="single" checked onchange="onSplitModeChange()" class="accent-brand-600">
+                Every page becomes its own PDF
+              </label>
+              <label class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                <input type="radio" name="split-mode" value="ranges" onchange="onSplitModeChange()" class="accent-brand-600">
+                Custom ranges (each range becomes its own PDF)
+              </label>
+              <div id="split-ranges-row" class="hidden space-y-1">
+                <input type="text" id="ctrl-split-ranges" placeholder="e.g. 1-3, 4-6, 7" class="${INPUT_CLS}">
+                <div class="${HINT_CLS}">Separate ranges with commas. Each one is saved as a separate PDF inside the .zip.</div>
+              </div>
+              <div id="page-hint" class="${HINT_CLS}"></div>
+            </div>`;
+          break;
+
+        case "remove-pages":
+          html = `
+            <div class="space-y-1.5 text-xs">
+              <div class="${LABEL_CLS}">Pages to remove</div>
+              <input type="text" id="ctrl-remove-pages" placeholder="e.g. 2, 5-7" class="${INPUT_CLS}">
+              <div id="page-hint" class="${HINT_CLS}"></div>
+            </div>`;
+          break;
+
+        case "extract-pages":
+          html = `
+            <div class="space-y-1.5 text-xs">
+              <div class="${LABEL_CLS}">Pages to extract</div>
+              <input type="text" id="ctrl-extract-pages" placeholder="e.g. 1-3, 8" class="${INPUT_CLS}">
+              <div class="${HINT_CLS}">The new PDF keeps the pages in the order you type them.</div>
+              <div id="page-hint" class="${HINT_CLS}"></div>
+            </div>`;
+          break;
+
+        case "organize-pdf":
+          html = `<div id="organize-grid"></div>`;
+          break;
+
+        case "compress-pdf":
+          html = `
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span class="${LABEL_CLS}">Compression level:</span>
+              <select id="ctrl-compress-level" class="${INPUT_CLS}">
+                <option value="low">Less compression (best quality)</option>
+                <option value="recommended" selected>Recommended</option>
+                <option value="extreme">Extreme compression (smallest file)</option>
+              </select>
+            </div>`;
+          break;
+
+        case "protect-pdf":
+          html = `
+            <div class="space-y-2 text-xs">
+              <div class="${LABEL_CLS}">Set a password</div>
+              <input type="password" id="ctrl-protect-pass" placeholder="Password" autocomplete="new-password" class="${INPUT_CLS}">
+              <input type="password" id="ctrl-protect-pass2" placeholder="Repeat password" autocomplete="new-password" class="${INPUT_CLS}">
+              <div class="${HINT_CLS}">Anyone opening the PDF will need this password. Keep it safe: it cannot be recovered.</div>
+            </div>`;
+          break;
+
+        case "unlock-pdf":
+          html = `
+            <div class="space-y-1.5 text-xs">
+              <div class="${LABEL_CLS}">Password (optional)</div>
+              <input type="password" id="ctrl-unlock-pass" placeholder="Only if the PDF asks for a password to open" autocomplete="off" class="${INPUT_CLS}">
+              <div class="${HINT_CLS}">Removes print, copy and edit restrictions. If the file needs a password to open, enter it above. DocGrid cannot guess passwords.</div>
+            </div>`;
+          break;
+
+        case "jpg-to-pdf":
+          html = `
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span class="${LABEL_CLS}">Page size:</span>
+              <select id="ctrl-jpg-pagesize" class="${INPUT_CLS}">
+                <option value="a4" selected>A4 (image fitted with margins)</option>
+                <option value="letter">US Letter (image fitted with margins)</option>
+                <option value="fit">Same size as each image (no margins)</option>
+              </select>
+            </div>`;
+          break;
+
+        case "translate-pdf":
+          html = `
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <span class="${LABEL_CLS}">Translate into:</span>
+              <select id="ctrl-translate-lang" class="${INPUT_CLS}">
+                ${TRANSLATE_LANGS.map(([code, name]) => `<option value="${code}">${name}</option>`).join("")}
+              </select>
+            </div>
+            <div class="${HINT_CLS} mt-1.5">Works with PDFs that contain real text. Scanned (image-only) PDFs cannot be translated.</div>`;
+          break;
+      }
+
+      if (html) {
+        container.innerHTML = html;
+        container.classList.remove("hidden");
+      } else {
+        container.innerHTML = "";
+        container.classList.add("hidden");
+      }
+    }
+
+    function onSplitModeChange() {
+      const mode = document.querySelector('input[name="split-mode"]:checked')?.value;
+      document.getElementById("split-ranges-row").classList.toggle("hidden", mode !== "ranges");
+    }
+
+    // ------------------------------------------------------------------
+    // File selection & queue
+    // ------------------------------------------------------------------
+    function setupEvents() {
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("file-input");
+
+      ["dragenter", "dragover"].forEach(ev => dropzone.addEventListener(ev, e => e.preventDefault()));
+      fileInput.addEventListener("change", e => {
+        const picked = Array.from(e.target.files);
+        e.target.value = "";
+        handleFiles(picked);
+      });
+      dropzone.addEventListener("drop", e => {
+        e.preventDefault();
+        if (e.dataTransfer.files) handleFiles(Array.from(e.dataTransfer.files));
+      });
+    }
+
+    function handleFiles(files) {
+      if (!files.length) return;
+
+      // Drag-and-drop ignores the file picker's filter, so check the type here
+      const allowed = toolExts(currentToolId);
+      const ok = files.filter(f => allowed.includes("." + f.name.split(".").pop().toLowerCase()));
+      if (ok.length < files.length) {
+        alert(`This tool only accepts ${allowed.join(", ")} files. ${files.length - ok.length} file(s) were skipped.`);
+      }
+      if (!ok.length) return;
+
+      if (processingMode === "single") {
+        fileQueue = [ok[0]];
+      } else {
+        fileQueue = [...fileQueue, ...ok];
+      }
+      renderQueue();
+    }
+
+    function renderQueue() {
+      const sec = document.getElementById("file-queue-section");
+      const list = document.getElementById("file-list");
+      const count = document.getElementById("queue-count-badge");
+      const size = document.getElementById("queue-size-badge");
+      const addMore = document.getElementById("btn-add-more");
+      const multi = FORCED_MODE[currentToolId] === "batch";
+
+      addMore.classList.toggle("hidden", !multi);
+
+      if (fileQueue.length === 0) {
+        sec.classList.add("hidden");
+        onQueueChanged();
+        return;
+      }
+      sec.classList.remove("hidden");
+      count.textContent = `${fileQueue.length} ${fileQueue.length === 1 ? 'File' : 'Files'}`;
+      const bytes = fileQueue.reduce((a, f) => a + f.size, 0);
+      size.textContent = formatSize(bytes);
+
+      list.innerHTML = fileQueue.map((file, i) => `
+        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs">
+          <div class="flex items-center gap-2 min-w-0">
+            ${multi ? `<span class="text-[10px] font-mono text-slate-400 w-4 text-right flex-shrink-0">${i + 1}</span>` : ''}
+            <span class="truncate max-w-xs font-medium text-slate-800 dark:text-slate-200">${escapeHtml(file.name)}</span>
+            <span class="text-[10px] font-mono text-slate-400 flex-shrink-0">${formatSize(file.size)}</span>
+          </div>
+          <div class="flex items-center gap-0.5 flex-shrink-0">
+            ${multi ? `
+              <button onclick="moveQueue(${i}, -1)" class="text-slate-400 hover:text-brand-600 px-1.5 py-1 ${i === 0 ? 'opacity-30 pointer-events-none' : ''}" title="Move up">↑</button>
+              <button onclick="moveQueue(${i}, 1)" class="text-slate-400 hover:text-brand-600 px-1.5 py-1 ${i === fileQueue.length - 1 ? 'opacity-30 pointer-events-none' : ''}" title="Move down">↓</button>
+            ` : ''}
+            <button onclick="removeQueue(${i})" class="text-slate-400 hover:text-rose-500 p-1" title="Remove">✕</button>
+          </div>
+        </div>
+      `).join('');
+
+      onQueueChanged();
+    }
+
+    function moveQueue(i, dir) {
+      const j = i + dir;
+      if (j < 0 || j >= fileQueue.length) return;
+      [fileQueue[i], fileQueue[j]] = [fileQueue[j], fileQueue[i]];
+      renderQueue();
+    }
+
+    function removeQueue(i) {
+      fileQueue.splice(i, 1);
+      renderQueue();
+    }
+
+    function clearQueue() {
+      fileQueue = [];
+      const fi = document.getElementById("file-input");
+      if (fi) fi.value = "";
+      renderQueue();
+    }
+
+    // Runs whenever the selected files change: page count hints and the Organize preview
+    async function onQueueChanged() {
+      const hint = document.getElementById("page-hint");
+      if (hint) {
+        const f = fileQueue[0];
+        if (!f) {
+          hint.textContent = "";
+        } else {
+          hint.textContent = "Reading page count...";
+          try {
+            const doc = await loadPdf(f);
+            if (fileQueue[0] === f) hint.textContent = `This PDF has ${doc.getPageCount()} page${doc.getPageCount() === 1 ? "" : "s"}.`;
+          } catch (err) {
+            if (fileQueue[0] === f) hint.textContent = err.message;
+          }
+        }
+      }
+      if (currentToolId === "organize-pdf") setupOrganize();
+    }
+
+    // ------------------------------------------------------------------
+    // Shared PDF / network helpers
+    // ------------------------------------------------------------------
+    async function loadPdf(file) {
+      if (!window.PDFLib) throw new Error("The PDF engine failed to load. Check your internet connection and refresh the page.");
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      try {
+        return await PDFLib.PDFDocument.load(bytes);
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        if (/encrypt/i.test(msg)) throw new Error(`"${file.name}" is password-protected. Use Unlock PDF first.`);
+        throw new Error(`"${file.name}" could not be read. It may be damaged, so try Repair PDF first.`);
+      }
+    }
+
+    async function openPdfJs(file) {
+      if (!window.pdfjsLib) throw new Error("The PDF reader failed to load. Check your internet connection and refresh the page.");
+      try {
+        return await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+      } catch (e) {
+        if (e && e.name === "PasswordException") throw new Error(`"${file.name}" is password-protected. Use Unlock PDF first.`);
+        throw new Error(`"${file.name}" could not be read as a PDF.`);
+      }
+    }
+
+    function pdfBlob(bytes) {
+      return new Blob([bytes], { type: "application/pdf" });
+    }
+
+    async function postFile(endpoint, file, fields) {
+      const fd = new FormData();
+      fd.append("file", file);
+      Object.entries(fields || {}).forEach(([k, v]) => fd.append(k, v));
+      let res;
+      try {
+        res = await fetch(`${BACKEND_URL}${endpoint}`, { method: "POST", body: fd });
+      } catch (e) {
+        throw new Error(SERVER_DOWN_MSG);
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "The conversion server reported an issue.");
+      }
+      return res;
+    }
+
+    async function postJson(endpoint, body, asBlob) {
+      let res;
+      try {
+        res = await fetch(`${BACKEND_URL}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } catch (e) {
+        throw new Error(SERVER_DOWN_MSG);
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "The server reported an issue.");
+      }
+      return asBlob ? res.blob() : res.json();
+    }
+
+    // "1-3, 5, 8-" -> [1,2,3,5,8,9,...] (1-based, in the order typed)
+    function parsePageList(str, total) {
+      const parts = String(str || "").split(",").map(s => s.trim()).filter(Boolean);
+      if (!parts.length) throw new Error("Enter the pages first, for example: 1-3, 5, 8-10");
+      const out = [];
+      for (const part of parts) {
+        let a, b;
+        const range = part.match(/^(\d+)?\s*-\s*(\d+)?$/);
+        if (/^\d+$/.test(part)) {
+          a = b = parseInt(part, 10);
+        } else if (range && (range[1] || range[2])) {
+          a = range[1] ? parseInt(range[1], 10) : 1;
+          b = range[2] ? parseInt(range[2], 10) : total;
+        } else {
+          throw new Error(`"${part}" is not a valid page range. Use numbers like 1-3, 5, 8-10.`);
+        }
+        if (a < 1 || b < 1 || a > total || b > total) throw new Error(`Page numbers must be between 1 and ${total}.`);
+        if (a > b) throw new Error(`"${part}" is backwards. Write it as ${b}-${a}.`);
+        for (let p = a; p <= b; p++) out.push(p);
+      }
+      return out;
+    }
+
+    function chunkText(text, max) {
+      const chunks = [];
+      let cur = "";
+      for (const line of text.split("\n")) {
+        if (cur && cur.length + line.length + 1 > max) {
+          chunks.push(cur);
+          cur = "";
+        }
+        if (line.length > max) {
+          for (let i = 0; i < line.length; i += max) chunks.push(line.slice(i, i + max));
+          continue;
+        }
+        cur += (cur ? "\n" : "") + line;
+      }
+      if (cur) chunks.push(cur);
+      return chunks;
+    }
+
+    // ------------------------------------------------------------------
+    // PDF text extraction that keeps line and column structure
+    // ------------------------------------------------------------------
+    function joinLine(items, tabbed) {
+      let out = "";
+      let prev = null;
+      for (const it of items) {
+        if (prev) {
+          const gap = it.x - (prev.x + prev.w);
+          if (tabbed && gap > Math.max(10, it.h * 1.2)) out += "\t";
+          else if (gap > it.h * 0.15 && !out.endsWith(" ") && !it.s.startsWith(" ")) out += " ";
+        }
+        out += it.s;
+        prev = it;
+      }
+      return out.replace(/[ ]+$/, "");
+    }
+
+    async function extractPdfLines(pdf, tabbed) {
+      const pages = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const tc = await page.getTextContent();
+        const items = tc.items
+          .filter(it => typeof it.str === "string" && it.str.length > 0 && it.transform)
+          .map(it => ({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10 }));
+        items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+
+        const lines = [];
+        for (const it of items) {
+          const last = lines[lines.length - 1];
+          if (last && Math.abs(last.y - it.y) <= Math.max(2, it.h * 0.45)) last.items.push(it);
+          else lines.push({ y: it.y, h: it.h, items: [it] });
+        }
+        lines.forEach(l => l.items.sort((a, b) => a.x - b.x));
+        pages.push(lines.map(l => ({ y: l.y, h: l.h, text: joinLine(l.items, tabbed) })));
+      }
+      return pages;
+    }
+
+    // Lines of every page, columns separated by tabs (used for table extraction)
+    async function extractLayoutText(pdf) {
+      const pages = await extractPdfLines(pdf, true);
+      return pages.map(lines => lines.map(l => l.text).filter(t => t.trim()).join("\n")).join("\n\n");
+    }
+
+    // Joins wrapped lines back into paragraphs (used for translation)
+    async function extractParagraphs(pdf) {
+      const pages = await extractPdfLines(pdf, false);
+      const paras = [];
+      let cur = "";
+      for (const lines of pages) {
+        const real = lines.filter(l => l.text.trim());
+        const maxLen = Math.max(1, ...real.map(l => l.text.length));
+        let prevY = null, prevH = 10, prevLen = 0;
+        real.forEach((l, idx) => {
+          const gap = prevY === null ? 0 : prevY - l.y;
+          const bullet = /^\s*([•\u2022\u25CF\u25AA\u25E6\-–*]|\d+[.)])\s/.test(l.text);
+          const newPara = prevY !== null && (gap > prevH * 1.8 || prevLen < maxLen * 0.55 || bullet);
+          if (idx === 0 && cur && /[.!?:;]$/.test(cur)) {
+            paras.push(cur);
+            cur = "";
+          }
+          if (newPara && cur) {
+            paras.push(cur);
+            cur = "";
+          }
+          if (!cur) cur = l.text.trim();
+          else if (/[a-z]-$/.test(cur) && /^[a-z]/.test(l.text.trim())) cur = cur.slice(0, -1) + l.text.trim();
+          else cur += " " + l.text.trim();
+          prevY = l.y;
+          prevH = l.h;
+          prevLen = l.text.length;
+        });
+      }
+      if (cur) paras.push(cur);
+      return paras.join("\n\n");
+    }
+
+    // ------------------------------------------------------------------
+    // TOOL RUNNERS
+    // Each runner takes a file (or a list of files for merge / jpg-to-pdf)
+    // and may return a short message for the toast
+    // ------------------------------------------------------------------
+
+    // ---- Organize PDF ----
+    async function runMerge(files) {
+      const out = await PDFLib.PDFDocument.create();
+      for (let i = 0; i < files.length; i++) {
+        setProcessButton(true, `Merging ${i + 1}/${files.length}...`);
+        const src = await loadPdf(files[i]);
+        const pages = await out.copyPages(src, src.getPageIndices());
+        pages.forEach(p => out.addPage(p));
+      }
+      triggerDownload(pdfBlob(await out.save()), "Merged_DocGrid.pdf");
+      return `Merged ${files.length} PDFs.`;
+    }
+
+    async function runSplit(file) {
+      const src = await loadPdf(file);
+      const total = src.getPageCount();
+      const mode = document.querySelector('input[name="split-mode"]:checked')?.value || "single";
+
+      let groups = [];
+      let labels = [];
+      if (mode === "single") {
+        for (let i = 0; i < total; i++) {
+          groups.push([i]);
+          labels.push(`page_${i + 1}`);
+        }
+      } else {
+        const raw = document.getElementById("ctrl-split-ranges").value;
+        const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+        if (!parts.length) throw new Error("Enter the ranges first, for example: 1-3, 4-6, 7");
+        parts.forEach(part => {
+          groups.push(parsePageList(part, total).map(n => n - 1));
+          labels.push(`pages_${part.replace(/\s+/g, "")}`);
+        });
+      }
+
+      const outputs = [];
+      for (const g of groups) {
+        const doc = await PDFLib.PDFDocument.create();
+        const pages = await doc.copyPages(src, g);
+        pages.forEach(p => doc.addPage(p));
+        outputs.push(await doc.save());
+      }
+
+      const base = baseName(file);
+      if (outputs.length === 1) {
+        triggerDownload(pdfBlob(outputs[0]), `${base}_${labels[0]}.pdf`);
+        return null;
+      }
+      if (!window.JSZip) throw new Error("The zip tool failed to load. Check your internet connection and refresh the page.");
+      const zip = new JSZip();
+      outputs.forEach((bytes, i) => zip.file(`${base}_${labels[i]}.pdf`, bytes));
+      triggerDownload(await zip.generateAsync({ type: "blob" }), `${base}_split.zip`);
+      return `Split into ${outputs.length} PDFs.`;
+    }
+
+    async function runRemovePages(file) {
+      const src = await loadPdf(file);
+      const total = src.getPageCount();
+      const remove = new Set(parsePageList(document.getElementById("ctrl-remove-pages").value, total));
+      const keep = [];
+      for (let i = 0; i < total; i++) if (!remove.has(i + 1)) keep.push(i);
+      if (!keep.length) throw new Error("You cannot remove every page of the PDF.");
+
+      const out = await PDFLib.PDFDocument.create();
+      (await out.copyPages(src, keep)).forEach(p => out.addPage(p));
+      triggerDownload(pdfBlob(await out.save()), `${baseName(file)}_edited.pdf`);
+      return `Removed ${remove.size} page${remove.size === 1 ? "" : "s"}.`;
+    }
+
+    async function runExtractPages(file) {
+      const src = await loadPdf(file);
+      const total = src.getPageCount();
+      const pages = parsePageList(document.getElementById("ctrl-extract-pages").value, total);
+
+      const out = await PDFLib.PDFDocument.create();
+      (await out.copyPages(src, pages.map(n => n - 1))).forEach(p => out.addPage(p));
+      triggerDownload(pdfBlob(await out.save()), `${baseName(file)}_extracted.pdf`);
+      return `Extracted ${pages.length} page${pages.length === 1 ? "" : "s"}.`;
+    }
+
+    // Organize PDF: visual page editor
+    let organizeState = { file: null, pages: [] };
+    let organizeToken = 0;
+    let organizeDragIdx = -1;
+
+    async function setupOrganize() {
+      const box = document.getElementById("organize-grid");
+      const container = document.getElementById("dynamic-controls");
+      if (!box) return;
+
+      const file = fileQueue[0];
+      if (!file) {
+        organizeState = { file: null, pages: [] };
+        organizeToken++;
+        container.classList.add("hidden");
+        return;
+      }
+      container.classList.remove("hidden");
+
+      const token = ++organizeToken;
+      box.innerHTML = `<div class="text-xs text-slate-400">Loading pages...</div>`;
+      try {
+        const pdf = await openPdfJs(file);
+        if (token !== organizeToken) return;
+        organizeState = { file, pages: Array.from({ length: pdf.numPages }, (_, i) => ({ src: i, rot: 0, thumb: null })) };
+        drawOrganize();
+
+        for (let i = 0; i < pdf.numPages; i++) {
+          const page = await pdf.getPage(i + 1);
+          const viewport = page.getViewport({ scale: 0.35 });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          if (token !== organizeToken) return;
+          const entry = organizeState.pages.find(p => p.src === i);
+          if (entry) entry.thumb = canvas.toDataURL("image/jpeg", 0.6);
+          if (i % 4 === 3 || i === pdf.numPages - 1) drawOrganize();
+        }
+      } catch (err) {
+        if (token === organizeToken) box.innerHTML = `<div class="text-xs text-rose-500">${escapeHtml(err.message || "Could not preview this PDF.")}</div>`;
+      }
+    }
+
+    function drawOrganize() {
+      const box = document.getElementById("organize-grid");
+      if (!box) return;
+      const pages = organizeState.pages;
+      const btn = "text-slate-400 hover:text-brand-600 px-1 text-xs";
+      box.innerHTML = `
+        <div class="flex items-center justify-between mb-2 text-xs">
+          <span class="${LABEL_CLS}">${pages.length} page${pages.length === 1 ? "" : "s"} <span class="font-normal text-slate-400">· drag to reorder, or use the arrows</span></span>
+          <button onclick="organizeReset()" class="text-[11px] text-brand-600 dark:text-brand-400 font-semibold hover:underline">Reset</button>
+        </div>
+        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-96 overflow-y-auto pr-1">
+          ${pages.map((p, i) => `
+            <div draggable="true" ondragstart="organizeDragStart(${i})" ondragover="event.preventDefault()" ondrop="organizeDrop(${i})" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 text-center cursor-move">
+              <div class="h-28 flex items-center justify-center overflow-hidden rounded bg-slate-50 dark:bg-slate-800">
+                ${p.thumb
+                  ? `<img src="${p.thumb}" draggable="false" class="max-h-full max-w-full" style="transform: rotate(${p.rot}deg)${p.rot % 180 ? " scale(0.7)" : ""}">`
+                  : `<span class="text-[10px] text-slate-400">...</span>`}
+              </div>
+              <div class="text-[10px] font-mono text-slate-500 mt-1">${i + 1} <span class="text-slate-300 dark:text-slate-600">(was ${p.src + 1})</span></div>
+              <div class="flex items-center justify-center gap-0.5 mt-0.5">
+                <button onclick="organizeMove(${i}, -1)" class="${btn} ${i === 0 ? "opacity-30 pointer-events-none" : ""}" title="Move earlier">←</button>
+                <button onclick="organizeMove(${i}, 1)" class="${btn} ${i === pages.length - 1 ? "opacity-30 pointer-events-none" : ""}" title="Move later">→</button>
+                <button onclick="organizeRotate(${i})" class="${btn}" title="Rotate 90°">⟳</button>
+                <button onclick="organizeDelete(${i})" class="text-slate-400 hover:text-rose-500 px-1 text-xs" title="Delete page">✕</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    function organizeDragStart(i) { organizeDragIdx = i; }
+    function organizeDrop(i) {
+      const from = organizeDragIdx;
+      organizeDragIdx = -1;
+      if (from < 0 || from === i) return;
+      const [moved] = organizeState.pages.splice(from, 1);
+      organizeState.pages.splice(i, 0, moved);
+      drawOrganize();
+    }
+    function organizeMove(i, dir) {
+      const j = i + dir;
+      const pages = organizeState.pages;
+      if (j < 0 || j >= pages.length) return;
+      [pages[i], pages[j]] = [pages[j], pages[i]];
+      drawOrganize();
+    }
+    function organizeRotate(i) {
+      const p = organizeState.pages[i];
+      p.rot = (p.rot + 90) % 360;
+      drawOrganize();
+    }
+    function organizeDelete(i) {
+      organizeState.pages.splice(i, 1);
+      drawOrganize();
+    }
+    function organizeReset() {
+      setupOrganize();
+    }
+
+    async function runOrganize(file) {
+      const pages = organizeState.pages;
+      if (!pages.length) throw new Error("There are no pages to save yet. Wait for the preview to load, or press Reset.");
+      const src = await loadPdf(file);
+      const out = await PDFLib.PDFDocument.create();
+      const copied = await out.copyPages(src, pages.map(p => p.src));
+      copied.forEach((pg, i) => {
+        const rot = pages[i].rot;
+        if (rot) pg.setRotation(PDFLib.degrees((pg.getRotation().angle + rot) % 360));
+        out.addPage(pg);
+      });
+      triggerDownload(pdfBlob(await out.save()), `${baseName(file)}_organized.pdf`);
+      return `Saved ${pages.length} page${pages.length === 1 ? "" : "s"}.`;
+    }
+
+    // ---- Optimize / Security (server-side tools) ----
+    async function runCompress(file) {
+      const level = document.getElementById("ctrl-compress-level")?.value || "recommended";
+      const res = await postFile("/api/pdf/compress", file, { level });
+      const before = parseInt(res.headers.get("X-Original-Size"), 10) || file.size;
+      const after = parseInt(res.headers.get("X-Result-Size"), 10) || before;
+      triggerDownload(await res.blob(), `${baseName(file)}_compressed.pdf`);
+      if (after < before) return `Compressed ${formatSize(before)} to ${formatSize(after)} (${Math.round((1 - after / before) * 100)}% smaller).`;
+      return "This PDF is already well optimized, so the original was returned.";
+    }
+
+    async function runRepair(file) {
+      const res = await postFile("/api/pdf/repair", file);
+      triggerDownload(await res.blob(), `${baseName(file)}_repaired.pdf`);
+      return "PDF repaired.";
+    }
+
+    async function runProtect(file) {
+      const p1 = document.getElementById("ctrl-protect-pass").value;
+      const p2 = document.getElementById("ctrl-protect-pass2").value;
+      if (!p1) throw new Error("Enter a password first.");
+      if (p1 !== p2) throw new Error("The two passwords do not match.");
+      const res = await postFile("/api/pdf/protect", file, { password: p1 });
+      triggerDownload(await res.blob(), `${baseName(file)}_protected.pdf`);
+      return "PDF protected with a password.";
+    }
+
+    async function runUnlock(file) {
+      const pass = document.getElementById("ctrl-unlock-pass").value;
+      const res = await postFile("/api/pdf/unlock", file, { password: pass });
+      triggerDownload(await res.blob(), `${baseName(file)}_unlocked.pdf`);
+      return "PDF unlocked.";
+    }
+
+    async function runWatermark(file) {
+      const text = document.getElementById("ctrl-watermark")?.value || "CONFIDENTIAL";
+      const res = await postFile("/api/pdf/watermark", file, { text });
+      triggerDownload(await res.blob(), "DocGrid_" + file.name);
+    }
+
+    // ---- Convert to / from PDF ----
+    async function runOfficeToPdf(file) {
+      const res = await postFile("/api/convert/to-pdf", file);
+      triggerDownload(await res.blob(), `${baseName(file)}.pdf`);
+    }
+
+    async function runPdfToWord(file) {
+      const res = await postFile("/api/convert/to-docx", file);
+      triggerDownload(await res.blob(), `${baseName(file)}.docx`);
+    }
+
+    async function runPdfToPowerpoint(file) {
+      const res = await postFile("/api/convert/to-pptx", file);
+      triggerDownload(await res.blob(), `${baseName(file)}.pptx`);
+      return "Each PDF page is now a slide image.";
+    }
+
+    async function runPdfToJpg(file) {
+      const pdf = await openPdfJs(file);
+      const n = pdf.numPages;
+      const images = [];
+      for (let i = 1; i <= n; i++) {
+        setProcessButton(true, `Rendering page ${i}/${n}...`);
+        const page = await pdf.getPage(i);
+        const base = page.getViewport({ scale: 1 });
+        const scale = Math.min(2, 4096 / Math.max(base.width, base.height));
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        images.push(await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92)));
+        canvas.width = canvas.height = 0;
+      }
+      const name = baseName(file);
+      if (n === 1) {
+        triggerDownload(images[0], `${name}.jpg`);
+        return null;
+      }
+      if (!window.JSZip) throw new Error("The zip tool failed to load. Check your internet connection and refresh the page.");
+      const zip = new JSZip();
+      images.forEach((blob, i) => zip.file(`${name}_page_${i + 1}.jpg`, blob));
+      triggerDownload(await zip.generateAsync({ type: "blob" }), `${name}_pages.zip`);
+      return `Saved ${n} pages as JPG images.`;
+    }
+
+    async function imageToJpeg(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error(`"${file.name}" is not a readable image.`));
+        });
+        const scale = Math.min(1, 4000 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92));
+        return { bytes: new Uint8Array(await blob.arrayBuffer()), w, h };
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function runJpgToPdf(files) {
+      if (!window.PDFLib) throw new Error("The PDF engine failed to load. Check your internet connection and refresh the page.");
+      const sizeMode = document.getElementById("ctrl-jpg-pagesize")?.value || "a4";
+      const out = await PDFLib.PDFDocument.create();
+
+      for (let i = 0; i < files.length; i++) {
+        setProcessButton(true, `Adding image ${i + 1}/${files.length}...`);
+        const { bytes, w, h } = await imageToJpeg(files[i]);
+        const img = await out.embedJpg(bytes);
+
+        if (sizeMode === "fit") {
+          const page = out.addPage([w * 0.75, h * 0.75]);
+          page.drawImage(img, { x: 0, y: 0, width: w * 0.75, height: h * 0.75 });
+        } else {
+          const base = sizeMode === "letter" ? [612, 792] : [595.28, 841.89];
+          const [pw, ph] = w > h ? [base[1], base[0]] : base;
+          const margin = 24;
+          const s = Math.min((pw - margin * 2) / w, (ph - margin * 2) / h);
+          const dw = w * s;
+          const dh = h * s;
+          const page = out.addPage([pw, ph]);
+          page.drawImage(img, { x: (pw - dw) / 2, y: (ph - dh) / 2, width: dw, height: dh });
+        }
+      }
+      const name = files.length === 1 ? baseName(files[0]) + ".pdf" : "Images_DocGrid.pdf";
+      triggerDownload(pdfBlob(await out.save()), name);
+      return `Created a PDF with ${files.length} page${files.length === 1 ? "" : "s"}.`;
+    }
+
+    async function runPdfToExcel(file) {
+      const pdf = await openPdfJs(file);
+      let text = await extractLayoutText(pdf);
+      if (text.replace(/\s/g, "").length < 20) throw new Error("No readable text was found. Scanned (image-only) PDFs cannot be converted to Excel.");
+
+      let notice = null;
+      if (text.length > 120000) {
+        text = text.slice(0, 120000);
+        notice = "Only the first part of the document was processed.";
+      }
+
+      const chunks = chunkText(text, 12000);
+      const tables = [];
+      for (let i = 0; i < chunks.length; i++) {
+        setProcessButton(true, `Finding tables ${i + 1}/${chunks.length}...`);
+        const r = await postJson("/api/ai/tables", { text: chunks[i] });
+        tables.push(...(r.tables || []));
+      }
+      if (!tables.length) throw new Error("No tables were found in this PDF.");
+
+      setProcessButton(true, "Building Excel file...");
+      const blob = await postJson("/api/convert/tables-to-xlsx", { tables }, true);
+      triggerDownload(blob, `${baseName(file)}.xlsx`);
+      return notice || `Found ${tables.length} table${tables.length === 1 ? "" : "s"}.`;
+    }
+
+    async function runTranslate(file) {
+      const lang = document.getElementById("ctrl-translate-lang").value;
+      let text;
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const pdf = await openPdfJs(file);
+        text = await extractParagraphs(pdf);
+      } else {
+        text = await file.text();
+      }
+      text = text.replace(/\r/g, "").trim();
+      if (text.replace(/\s/g, "").length < 20) throw new Error("No readable text was found. Scanned (image-only) PDFs cannot be translated.");
+
+      let notice = null;
+      const LIMIT = 120000;
+      if (text.length > LIMIT) {
+        if (!confirm(`This document is very long. Only the first ${LIMIT.toLocaleString()} characters will be translated. Continue?`)) return "Cancelled.";
+        text = text.slice(0, LIMIT);
+        notice = "Translated the first part of the document.";
+      }
+
+      const chunks = chunkText(text, 4000);
+      const translated = [];
+      for (let i = 0; i < chunks.length; i++) {
+        setProcessButton(true, `Translating ${i + 1}/${chunks.length}...`);
+        const r = await postJson("/api/translate", { text: chunks[i], targetLang: lang });
+        translated.push(r.translated);
+      }
+
+      setProcessButton(true, "Building PDF...");
+      const blob = await postJson("/api/translate/pdf", { text: translated.join("\n\n"), targetLang: lang, filename: file.name }, true);
+      triggerDownload(blob, `${baseName(file)}_${lang}.pdf`);
+      return notice;
+    }
+
+    const TOOL_RUNNERS = {
+      "merge-pdf": runMerge,
+      "split-pdf": runSplit,
+      "remove-pages": runRemovePages,
+      "extract-pages": runExtractPages,
+      "organize-pdf": runOrganize,
+      "compress-pdf": runCompress,
+      "repair-pdf": runRepair,
+      "word-to-pdf": runOfficeToPdf,
+      "powerpoint-to-pdf": runOfficeToPdf,
+      "excel-to-pdf": runOfficeToPdf,
+      "jpg-to-pdf": runJpgToPdf,
+      "pdf-to-word": runPdfToWord,
+      "pdf-to-jpg": runPdfToJpg,
+      "pdf-to-powerpoint": runPdfToPowerpoint,
+      "pdf-to-excel": runPdfToExcel,
+      "unlock-pdf": runUnlock,
+      "protect-pdf": runProtect,
+      "add-watermark": runWatermark,
+      "ai-summarizer": runAiSummarizerClient,
+      "translate-pdf": runTranslate
+    };
+
+    // MULTI-MODAL EXECUTION PIPELINE
+    async function executeCurrentTool() {
+      if (fileQueue.length === 0) {
+        alert("Please select a file first.");
+        return;
+      }
+      if (currentToolId === "merge-pdf" && fileQueue.length < 2) {
+        alert("Select at least 2 PDF files to merge. Use \"+ Add more files\" to add another.");
+        return;
+      }
+
+      const runner = TOOL_RUNNERS[currentToolId];
+      if (!runner) {
+        alert("This tool is not available yet.");
+        return;
+      }
+
+      setProcessButton(true, "Working...");
+      try {
+        let notice = null;
+        if (FORCED_MODE[currentToolId] === "batch") {
+          notice = await runner(fileQueue.slice());
+        } else {
+          const files = processingMode === "batch" ? fileQueue.slice() : [fileQueue[0]];
+          for (let i = 0; i < files.length; i++) {
+            if (files.length > 1) setProcessButton(true, `File ${i + 1}/${files.length}...`);
+            notice = await runner(files[i]);
+          }
+        }
+        triggerAutoReset(notice);
+      } catch (err) {
+        console.error(err);
+        alert("Notice: " + (err.message || "Something went wrong. Please try again."));
+      } finally {
+        setProcessButton(false, idleLabel());
+      }
+    }
+
+    // =====================================================================
+    // GEMINI-POWERED EXECUTIVE SUMMARIZER
+    // =====================================================================
+    async function runAiSummarizerClient(file) {
+      let rawText = "";
+      let pageCount = null;
+
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const pdfDoc = await openPdfJs(file);
+        pageCount = pdfDoc.numPages;
+
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const tc = await page.getTextContent();
+          rawText += tc.items.map(it => it.str).join(" ") + "\n";
+        }
+      } else {
+        rawText = await file.text();
+      }
+
+      // Basic cleanup for odd characters/spacing
+      const clean = rawText
+        .replace(/\u00ff|\u0178|\uFB01/g, "fi")
+        .replace(/(\w)\s*[\u00df-\u00ff]\s*(\w)/g, "$1ti$2")
+        .replace(/[•\u2022\u25CF\u25AA\u25E6\u25A0]/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .trim();
+
+      if (clean.length < 30) {
+        throw new Error("No readable text found in document to summarize.");
+      }
+
+      let res;
+      try {
+        res = await fetch(`${BACKEND_URL}/api/summarize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: clean, filename: file.name })
+        });
+      } catch (e) {
+        throw new Error(SERVER_DOWN_MSG);
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "AI Summarizer server error.");
+      }
+
+      const { summary } = await res.json();
+
+      // Build the formatted PDF report
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const M = 20, W = 170, BOTTOM = 275;
+      let y = 25;
+
+      const ensureSpace = (h) => {
+        if (y + h > BOTTOM) { doc.addPage(); y = 25; }
+      };
+
+      // Header Banner
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(30, 41, 59);
+      doc.text("DocGrid AI Intelligence Executive Summary", M, y);
+      y += 7;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      const meta = `Analyzed Document: ${file.name}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | Powered by Gemini`;
+      doc.text(meta, M, y);
+      y += 4;
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(M, y, M + W, y);
+      y += 10;
+
+      // Render Markdown sections cleanly
+      const lines = summary.split("\n");
+      for (let rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          y += 2.5;
+          continue;
+        }
+
+        if (line.startsWith("## ")) {
+          y += 3;
+          ensureSpace(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(30, 41, 59);
+          doc.text(line.replace("## ", ""), M, y);
+          y += 6.5;
+        } else if (line.startsWith("* ") || line.startsWith("- ")) {
+          ensureSpace(8);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const bulletText = line.replace(/^[\*\-]\s+/, "");
+          const split = doc.splitTextToSize(`•  ${bulletText}`, W - 4);
+          doc.text(split, M + 2, y);
+          y += split.length * 5 + 2;
+        } else {
+          ensureSpace(8);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const split = doc.splitTextToSize(line, W);
+          doc.text(split, M, y);
+          y += split.length * 5 + 2;
+        }
+      }
+
+      doc.save("Summary_" + file.name.replace(/\.[^/.]+$/, "") + ".pdf");
+    }
+
+    function triggerDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function triggerAutoReset(msg) {
+      const toast = document.getElementById("reset-toast");
+      const countdownEl = document.getElementById("countdown-val");
+      document.getElementById("toast-msg").textContent = msg || "Download complete!";
+      let count = msg ? 6 : 3;
+      toast.classList.remove("translate-y-[-100px]", "opacity-0");
+      toast.classList.add("translate-y-0", "opacity-100");
+      countdownEl.textContent = count;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownEl.textContent = count;
+        } else {
+          clearInterval(timer);
+          toast.classList.add("translate-y-[-100px]", "opacity-0");
+          toast.classList.remove("translate-y-0", "opacity-100");
+          clearQueue();
+        }
+      }, 1000);
+    }
+
+    function initTheme() {
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+        document.getElementById('theme-icon-sun').classList.remove('hidden');
+        document.getElementById('theme-icon-moon').classList.add('hidden');
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.theme = isDark ? 'dark' : 'light';
+      document.getElementById('theme-icon-sun').classList.toggle('hidden', !isDark);
+      document.getElementById('theme-icon-moon').classList.toggle('hidden', isDark);
+    }
+
+    const MODALS = {
+      'security-modal': { title: 'Security Architecture', body: '<p>All uploaded documents undergo in-memory transformation and are immediately purged from disk once the download stream concludes.</p>' },
+      'privacy-modal': { title: 'Privacy Policy', body: '<p>Zero persistent storage, zero telemetry logs, and zero retention of document bytes.</p><p>The AI tools (AI Summarizer, Translate PDF and PDF to Excel) send the text extracted from your document to Google\'s Gemini API to produce the result.</p>' },
+      'terms-modal': { title: 'Terms of Use', body: '<p>Terms of use will be published here soon.</p>' },
+      'about-modal': { title: 'About DocGrid', body: '<p>DocGrid is a document and PDF toolkit for converting, organizing, securing and translating files.</p>' },
+      'contact-modal': { title: 'Contact', body: '<p>Contact details will be added here soon.</p>' }
+    };
+
+    function openModal(k) {
+      const m = MODALS[k] || { title: 'DocGrid', body: '<p>Coming soon.</p>' };
+      document.getElementById("modal-title").textContent = m.title;
+      document.getElementById("modal-body").innerHTML = m.body;
+      document.getElementById("modal-container").classList.remove("hidden");
+    }
+
+    function closeModal() {
+      document.getElementById("modal-container").classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
