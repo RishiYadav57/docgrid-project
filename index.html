@@ -31,9 +31,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <!-- Mozilla PDF.js (reading/rendering), jsPDF (summary report), pdf-lib (page tools), JSZip (zip downloads) -->
+  <!-- Mozilla PDF.js (reading/rendering), pdf-lib (page tools), JSZip (zip downloads and Word/PowerPoint reading) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script>
@@ -407,7 +406,8 @@
         name: "Optimize PDF",
         tools: [
           { id: "compress-pdf", name: "Compress PDF", ext: ".pdf", desc: "Reduce PDF file size while optimizing quality." },
-          { id: "repair-pdf", name: "Repair PDF", ext: ".pdf", desc: "Rebuild and recover corrupt or damaged PDF structures." }
+          { id: "repair-pdf", name: "Repair PDF", ext: ".pdf", desc: "Rebuild and recover corrupt or damaged PDF structures." },
+          { id: "compress-image", name: "Compress Image", ext: ".jpg,.jpeg,.png,.webp", desc: "Shrink JPG, PNG and WebP images with adjustable quality and size." }
         ]
       },
       {
@@ -443,7 +443,7 @@
         id: "intelligence",
         name: "PDF Intelligence",
         tools: [
-          { id: "ai-summarizer", name: "AI Summarizer", ext: ".pdf,.docx,.txt,.pptx", desc: "Synthesize full documents into key executive bullet points." },
+          { id: "ai-summarizer", name: "AI Summarizer", ext: ".pdf,.docx,.pptx,.txt,.jpg,.jpeg,.png,.webp", desc: "Synthesize full documents into key executive bullet points." },
           { id: "translate-pdf", name: "Translate PDF", ext: ".pdf,.txt", desc: "Extract and translate document streams into other languages." }
         ]
       }
@@ -461,11 +461,12 @@
     ];
 
     // Tools that need a fixed mode: merge/jpg-to-pdf take many files at once, organize works on exactly one
-    const FORCED_MODE = { "merge-pdf": "batch", "jpg-to-pdf": "batch", "organize-pdf": "single" };
+    const FORCED_MODE = { "merge-pdf": "batch", "jpg-to-pdf": "batch", "compress-image": "batch", "organize-pdf": "single" };
 
     const DROP_HINTS = {
       "merge-pdf": "Select two or more PDF files. You can add more and change their order below.",
-      "jpg-to-pdf": "Select one or more images. They become the pages of one PDF, in the order shown below."
+      "jpg-to-pdf": "Select one or more images. They become the pages of one PDF, in the order shown below.",
+      "compress-image": "Select one or more images. They are compressed together (as a .zip if you pick several)."
     };
 
     const ACTION_LABELS = {
@@ -475,6 +476,7 @@
       "extract-pages": "Extract Pages & Download",
       "organize-pdf": "Save PDF & Download",
       "compress-pdf": "Compress & Download",
+      "compress-image": "Compress & Download",
       "repair-pdf": "Repair & Download",
       "unlock-pdf": "Unlock & Download",
       "protect-pdf": "Protect & Download",
@@ -508,6 +510,7 @@
       renderFooter();
       setupEvents();
       setProcessingMode("single");
+      fetch(`${BACKEND_URL}/health`).catch(() => {}); // wakes the server up early
 
       const hash = window.location.hash.replace("#/tool/", "");
       if (hash && findTool(hash)) {
@@ -814,13 +817,108 @@
 
         case "compress-pdf":
           html = `
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-              <span class="${LABEL_CLS}">Compression level:</span>
-              <select id="ctrl-compress-level" class="${INPUT_CLS}">
-                <option value="low">Less compression (best quality)</option>
-                <option value="recommended" selected>Recommended</option>
-                <option value="extreme">Extreme compression (smallest file)</option>
-              </select>
+            <div class="space-y-3 text-xs">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Compression level:</span>
+                <select id="ctrl-compress-level" onchange="onCompressLevelChange()" class="${INPUT_CLS}">
+                  <option value="low">Light: best quality</option>
+                  <option value="recommended" selected>Recommended: good quality, much smaller</option>
+                  <option value="strong">Strong: smaller, softer images</option>
+                  <option value="extreme">Extreme: smallest, low image quality</option>
+                  <option value="custom">Custom: choose image size and quality</option>
+                </select>
+              </div>
+              <div id="compress-custom-row" class="hidden space-y-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span class="${LABEL_CLS}">Image resolution:</span>
+                  <select id="ctrl-compress-dpi" class="${INPUT_CLS}">
+                    <option value="300">300 dpi (print quality)</option>
+                    <option value="200">200 dpi</option>
+                    <option value="150" selected>150 dpi (good for screens)</option>
+                    <option value="120">120 dpi</option>
+                    <option value="96">96 dpi (small)</option>
+                    <option value="72">72 dpi (smallest)</option>
+                  </select>
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span class="${LABEL_CLS}">Image quality:</span>
+                  <select id="ctrl-compress-quality" class="${INPUT_CLS}">
+                    <option value="high">High</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="low">Low</option>
+                    <option value="verylow">Very low</option>
+                  </select>
+                </div>
+              </div>
+              <label class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                <input type="checkbox" id="ctrl-compress-gray" class="accent-brand-600">
+                Convert to grayscale (smaller file, removes colour)
+              </label>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Target size (optional):</span>
+                <div class="flex items-center gap-2">
+                  <input type="number" id="ctrl-compress-target" min="0.1" step="0.1" placeholder="e.g. 2" class="${INPUT_CLS.replace("w-full sm:w-64", "w-28")}">
+                  <span class="text-slate-500">MB</span>
+                </div>
+              </div>
+              <div class="${HINT_CLS}">Images are what shrinks. A PDF that is mostly text is already small, so savings will be limited. With a target size, DocGrid keeps trying stronger settings until the file fits.</div>
+            </div>`;
+          break;
+
+        case "compress-image":
+          html = `
+            <div class="space-y-3 text-xs">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Save as:</span>
+                <select id="ctrl-img-format" class="${INPUT_CLS}">
+                  <option value="jpeg" selected>JPEG (smallest for photos)</option>
+                  <option value="webp">WebP (smaller, modern format)</option>
+                  <option value="png">PNG (keeps transparency, only resizing makes it smaller)</option>
+                </select>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Quality:</span>
+                <select id="ctrl-img-quality" class="${INPUT_CLS}">
+                  <option value="0.85">High</option>
+                  <option value="0.7" selected>Medium (recommended)</option>
+                  <option value="0.5">Low</option>
+                  <option value="0.35">Very low</option>
+                </select>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Longest side:</span>
+                <select id="ctrl-img-maxdim" class="${INPUT_CLS}">
+                  <option value="0" selected>Keep original size</option>
+                  <option value="3000">3000 px</option>
+                  <option value="2000">2000 px</option>
+                  <option value="1600">1600 px</option>
+                  <option value="1200">1200 px</option>
+                  <option value="800">800 px</option>
+                </select>
+              </div>
+              <div class="${HINT_CLS}">Hidden photo data such as location is removed. If an image cannot be made smaller, the original is kept.</div>
+            </div>`;
+          break;
+
+        case "ai-summarizer":
+          html = `
+            <div class="space-y-3 text-xs">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Summary length:</span>
+                <select id="ctrl-sum-length" class="${INPUT_CLS}">
+                  <option value="brief">Brief (quick overview)</option>
+                  <option value="standard" selected>Standard</option>
+                  <option value="detailed">Detailed (section by section)</option>
+                </select>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span class="${LABEL_CLS}">Summary language:</span>
+                <select id="ctrl-sum-lang" class="${INPUT_CLS}">
+                  <option value="auto" selected>Same as the document</option>
+                  ${TRANSLATE_LANGS.map(([code, name]) => `<option value="${code}">${name}</option>`).join("")}
+                </select>
+              </div>
+              <div class="${HINT_CLS}">Reads PDF, Word, PowerPoint, text files and images. Scanned PDFs are read visually (first 12 pages).</div>
             </div>`;
           break;
 
@@ -874,6 +972,11 @@
         container.innerHTML = "";
         container.classList.add("hidden");
       }
+    }
+
+    function onCompressLevelChange() {
+      const level = document.getElementById("ctrl-compress-level").value;
+      document.getElementById("compress-custom-row").classList.toggle("hidden", level !== "custom");
     }
 
     function onSplitModeChange() {
@@ -1027,16 +1130,24 @@
       return new Blob([bytes], { type: "application/pdf" });
     }
 
+    // Calls the DocGrid server. A sleeping Render server can take a while to wake up, so retry a few times.
+    async function serverFetch(endpoint, init) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          return await fetch(`${BACKEND_URL}${endpoint}`, init);
+        } catch (e) {
+          setProcessButton(true, "Waking up server...");
+          await new Promise(r => setTimeout(r, 8000));
+        }
+      }
+      throw new Error(SERVER_DOWN_MSG);
+    }
+
     async function postFile(endpoint, file, fields) {
       const fd = new FormData();
       fd.append("file", file);
       Object.entries(fields || {}).forEach(([k, v]) => fd.append(k, v));
-      let res;
-      try {
-        res = await fetch(`${BACKEND_URL}${endpoint}`, { method: "POST", body: fd });
-      } catch (e) {
-        throw new Error(SERVER_DOWN_MSG);
-      }
+      const res = await serverFetch(endpoint, { method: "POST", body: fd });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || "The conversion server reported an issue.");
@@ -1045,16 +1156,11 @@
     }
 
     async function postJson(endpoint, body, asBlob) {
-      let res;
-      try {
-        res = await fetch(`${BACKEND_URL}${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-      } catch (e) {
-        throw new Error(SERVER_DOWN_MSG);
-      }
+      const res = await serverFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || "The server reported an issue.");
@@ -1392,12 +1498,25 @@
     // ---- Optimize / Security (server-side tools) ----
     async function runCompress(file) {
       const level = document.getElementById("ctrl-compress-level")?.value || "recommended";
-      const res = await postFile("/api/pdf/compress", file, { level });
+      const fields = { level, gray: document.getElementById("ctrl-compress-gray")?.checked ? "1" : "0" };
+      if (level === "custom") {
+        fields.dpi = document.getElementById("ctrl-compress-dpi").value;
+        fields.quality = document.getElementById("ctrl-compress-quality").value;
+      }
+      const target = parseFloat(document.getElementById("ctrl-compress-target")?.value);
+      if (target > 0) fields.targetMb = String(target);
+
+      setProcessButton(true, "Compressing...");
+      const res = await postFile("/api/pdf/compress", file, fields);
       const before = parseInt(res.headers.get("X-Original-Size"), 10) || file.size;
       const after = parseInt(res.headers.get("X-Result-Size"), 10) || before;
+      const met = res.headers.get("X-Target-Met");
       triggerDownload(await res.blob(), `${baseName(file)}_compressed.pdf`);
-      if (after < before) return `Compressed ${formatSize(before)} to ${formatSize(after)} (${Math.round((1 - after / before) * 100)}% smaller).`;
-      return "This PDF is already well optimized, so the original was returned.";
+
+      if (after >= before) return "This PDF is already well optimized, so the original was returned.";
+      let msg = `Compressed ${formatSize(before)} to ${formatSize(after)} (${Math.round((1 - after / before) * 100)}% smaller).`;
+      if (met === "0") msg += ` It could not reach ${target} MB. Try Extreme or grayscale.`;
+      return msg;
     }
 
     async function runRepair(file) {
@@ -1426,7 +1545,7 @@
     async function runWatermark(file) {
       const text = document.getElementById("ctrl-watermark")?.value || "CONFIDENTIAL";
       const res = await postFile("/api/pdf/watermark", file, { text });
-      triggerDownload(await res.blob(), "DocGrid_" + file.name);
+      triggerDownload(await res.blob(), `${baseName(file)}_watermarked.pdf`);
     }
 
     // ---- Convert to / from PDF ----
@@ -1502,6 +1621,72 @@
       } finally {
         URL.revokeObjectURL(url);
       }
+    }
+
+    async function compressOneImage(file, opts) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error(`"${file.name}" is not a readable image.`));
+        });
+        const scale = opts.maxDim ? Math.min(1, opts.maxDim / Math.max(img.naturalWidth, img.naturalHeight)) : 1;
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (opts.fmt !== "png") {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const mime = opts.fmt === "webp" ? "image/webp" : opts.fmt === "png" ? "image/png" : "image/jpeg";
+        const blob = await new Promise(r => canvas.toBlob(r, mime, opts.quality));
+        if (!blob) throw new Error(`"${file.name}" could not be compressed.`);
+        if (blob.size >= file.size) return { blob: file, name: file.name, before: file.size, after: file.size };
+        const ext = blob.type === "image/webp" ? "webp" : blob.type === "image/png" ? "png" : "jpg";
+        return { blob, name: `${baseName(file)}_compressed.${ext}`, before: file.size, after: blob.size };
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function runCompressImages(files) {
+      const opts = {
+        fmt: document.getElementById("ctrl-img-format")?.value || "jpeg",
+        quality: parseFloat(document.getElementById("ctrl-img-quality")?.value) || 0.7,
+        maxDim: parseInt(document.getElementById("ctrl-img-maxdim")?.value, 10) || 0
+      };
+      const results = [];
+      for (let i = 0; i < files.length; i++) {
+        setProcessButton(true, `Compressing ${i + 1}/${files.length}...`);
+        results.push(await compressOneImage(files[i], opts));
+      }
+      const before = results.reduce((a, r) => a + r.before, 0);
+      const after = results.reduce((a, r) => a + r.after, 0);
+
+      if (results.length === 1) {
+        triggerDownload(results[0].blob, results[0].name);
+      } else {
+        if (!window.JSZip) throw new Error("The zip tool failed to load. Check your internet connection and refresh the page.");
+        const zip = new JSZip();
+        const used = new Set();
+        results.forEach(r => {
+          let name = r.name;
+          let n = 2;
+          while (used.has(name)) name = r.name.replace(/(\.[^.]+)$/, `_${n++}$1`);
+          used.add(name);
+          zip.file(name, r.blob);
+        });
+        triggerDownload(await zip.generateAsync({ type: "blob" }), "Compressed_images.zip");
+      }
+
+      if (after < before) return `Reduced ${formatSize(before)} to ${formatSize(after)} (${Math.round((1 - after / before) * 100)}% smaller).`;
+      return "These images are already well optimized, so the originals were kept.";
     }
 
     async function runJpgToPdf(files) {
@@ -1600,6 +1785,7 @@
       "extract-pages": runExtractPages,
       "organize-pdf": runOrganize,
       "compress-pdf": runCompress,
+      "compress-image": runCompressImages,
       "repair-pdf": runRepair,
       "word-to-pdf": runOfficeToPdf,
       "powerpoint-to-pdf": runOfficeToPdf,
@@ -1657,119 +1843,175 @@
     // =====================================================================
     // GEMINI-POWERED EXECUTIVE SUMMARIZER
     // =====================================================================
-    async function runAiSummarizerClient(file) {
-      let rawText = "";
-      let pageCount = null;
-
-      if (file.name.toLowerCase().endsWith(".pdf")) {
-        const pdfDoc = await openPdfJs(file);
-        pageCount = pdfDoc.numPages;
-
-        for (let i = 1; i <= pdfDoc.numPages; i++) {
-          const page = await pdfDoc.getPage(i);
-          const tc = await page.getTextContent();
-          rawText += tc.items.map(it => it.str).join(" ") + "\n";
+    // Text from a .docx file (paragraphs and tables, in reading order)
+    function xmlParagraphText(p) {
+      let s = "";
+      const walk = n => {
+        for (const c of n.childNodes) {
+          if (c.nodeType !== 1) continue;
+          const ln = c.localName;
+          if (ln === "t") s += c.textContent;
+          else if (ln === "tab") s += "\t";
+          else if (ln === "br" || ln === "cr") s += "\n";
+          else if (ln !== "delText") walk(c);
         }
-      } else {
-        rawText = await file.text();
-      }
-
-      // Basic cleanup for odd characters/spacing
-      const clean = rawText
-        .replace(/\u00ff|\u0178|\uFB01/g, "fi")
-        .replace(/(\w)\s*[\u00df-\u00ff]\s*(\w)/g, "$1ti$2")
-        .replace(/[•\u2022\u25CF\u25AA\u25E6\u25A0]/g, "\n")
-        .replace(/[ \t]+/g, " ")
-        .trim();
-
-      if (clean.length < 30) {
-        throw new Error("No readable text found in document to summarize.");
-      }
-
-      let res;
-      try {
-        res = await fetch(`${BACKEND_URL}/api/summarize`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: clean, filename: file.name })
-        });
-      } catch (e) {
-        throw new Error(SERVER_DOWN_MSG);
-      }
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "AI Summarizer server error.");
-      }
-
-      const { summary } = await res.json();
-
-      // Build the formatted PDF report
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const M = 20, W = 170, BOTTOM = 275;
-      let y = 25;
-
-      const ensureSpace = (h) => {
-        if (y + h > BOTTOM) { doc.addPage(); y = 25; }
       };
+      walk(p);
+      return s;
+    }
 
-      // Header Banner
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.setTextColor(30, 41, 59);
-      doc.text("DocGrid AI Intelligence Executive Summary", M, y);
-      y += 7;
+    async function openOfficeZip(file, kind) {
+      if (!window.JSZip) throw new Error("The zip tool failed to load. Check your internet connection and refresh the page.");
+      try {
+        return await JSZip.loadAsync(await file.arrayBuffer());
+      } catch (e) {
+        throw new Error(`"${file.name}" is not a valid ${kind} file.`);
+      }
+    }
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      const meta = `Analyzed Document: ${file.name}` + (pageCount ? ` | Pages: ${pageCount}` : "") + ` | Powered by Gemini`;
-      doc.text(meta, M, y);
-      y += 4;
-
-      doc.setDrawColor(226, 232, 240);
-      doc.line(M, y, M + W, y);
-      y += 10;
-
-      // Render Markdown sections cleanly
-      const lines = summary.split("\n");
-      for (let rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) {
-          y += 2.5;
-          continue;
+    async function extractDocx(file) {
+      const zip = await openOfficeZip(file, ".docx");
+      const entry = zip.file("word/document.xml");
+      if (!entry) throw new Error(`"${file.name}" does not look like a Word document.`);
+      const xml = new DOMParser().parseFromString(await entry.async("string"), "application/xml");
+      const body = xml.getElementsByTagName("w:body")[0] || xml.documentElement;
+      const out = [];
+      const handle = el => {
+        for (const c of el.childNodes) {
+          if (c.nodeType !== 1) continue;
+          const ln = c.localName;
+          if (ln === "p") {
+            const t = xmlParagraphText(c).trim();
+            if (t) out.push(t);
+          } else if (ln === "tbl") {
+            for (const tr of c.childNodes) {
+              if (tr.nodeType !== 1 || tr.localName !== "tr") continue;
+              const cells = [];
+              for (const tc of tr.childNodes) {
+                if (tc.nodeType !== 1 || tc.localName !== "tc") continue;
+                const paras = Array.from(tc.getElementsByTagName("*")).filter(x => x.localName === "p");
+                cells.push(paras.map(x => xmlParagraphText(x).trim()).filter(Boolean).join(" "));
+              }
+              if (cells.some(Boolean)) out.push(cells.join("\t"));
+            }
+          } else if (ln === "sdt" || ln === "sdtContent" || ln === "ins" || ln === "smartTag") {
+            handle(c);
+          }
         }
+      };
+      handle(body);
+      return out.join("\n");
+    }
 
-        if (line.startsWith("## ")) {
-          y += 3;
-          ensureSpace(12);
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(11);
-          doc.setTextColor(30, 41, 59);
-          doc.text(line.replace("## ", ""), M, y);
-          y += 6.5;
-        } else if (line.startsWith("* ") || line.startsWith("- ")) {
-          ensureSpace(8);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(51, 65, 85);
-          const bulletText = line.replace(/^[\*\-]\s+/, "");
-          const split = doc.splitTextToSize(`•  ${bulletText}`, W - 4);
-          doc.text(split, M + 2, y);
-          y += split.length * 5 + 2;
-        } else {
-          ensureSpace(8);
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(10);
-          doc.setTextColor(51, 65, 85);
-          const split = doc.splitTextToSize(line, W);
-          doc.text(split, M, y);
-          y += split.length * 5 + 2;
+    async function extractPptx(file) {
+      const zip = await openOfficeZip(file, ".pptx");
+      const num = n => parseInt(n.match(/(\d+)\.xml$/)[1], 10);
+      const slides = Object.keys(zip.files)
+        .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+        .sort((a, b) => num(a) - num(b));
+      if (!slides.length) throw new Error(`"${file.name}" does not look like a PowerPoint file.`);
+      const out = [];
+      for (let i = 0; i < slides.length; i++) {
+        const xml = new DOMParser().parseFromString(await zip.file(slides[i]).async("string"), "application/xml");
+        const paras = Array.from(xml.getElementsByTagName("*"))
+          .filter(x => x.localName === "p")
+          .map(p => xmlParagraphText(p).trim())
+          .filter(Boolean);
+        out.push(`--- Slide ${i + 1} ---\n` + paras.join("\n"));
+      }
+      return out.join("\n\n");
+    }
+
+    function cleanExtractedText(s) {
+      return String(s)
+        .replace(/\uFB00/g, "ff").replace(/\uFB01/g, "fi").replace(/\uFB02/g, "fl")
+        .replace(/\uFB03/g, "ffi").replace(/\uFB04/g, "ffl")
+        .replace(/\u00A0/g, " ")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/[ ]{3,}/g, "  ")
+        .replace(/\n{4,}/g, "\n\n\n")
+        .trim();
+    }
+
+    function bytesToBase64(bytes) {
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      return btoa(bin);
+    }
+
+    // Page images for scanned PDFs (Gemini reads them like a person would)
+    async function renderPdfPagesForAi(pdf, maxPages) {
+      const images = [];
+      const n = Math.min(pdf.numPages, maxPages);
+      for (let i = 1; i <= n; i++) {
+        setProcessButton(true, `Reading page ${i}/${n}...`);
+        const page = await pdf.getPage(i);
+        const base = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: Math.min(2, 1500 / Math.max(base.width, base.height)) });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        images.push(canvas.toDataURL("image/jpeg", 0.75).split(",")[1]);
+        canvas.width = canvas.height = 0;
+      }
+      return images;
+    }
+
+    async function runAiSummarizerClient(file) {
+      const length = document.getElementById("ctrl-sum-length")?.value || "standard";
+      const language = document.getElementById("ctrl-sum-lang")?.value || "auto";
+      const lower = file.name.toLowerCase();
+      let text = "";
+      let images = [];
+      let pageCount = null;
+      let notice = null;
+
+      setProcessButton(true, "Reading document...");
+      if (lower.endsWith(".pdf")) {
+        const pdf = await openPdfJs(file);
+        pageCount = pdf.numPages;
+        const pages = await extractPdfLines(pdf, true);
+        text = pages.map((lines, i) => `--- Page ${i + 1} ---\n` + lines.map(l => l.text).filter(t => t.trim()).join("\n")).join("\n\n");
+        const visible = text.replace(/--- Page \d+ ---/g, "").replace(/\s/g, "").length;
+        if (visible < Math.max(60, pageCount * 25)) {
+          // Scanned or image-only PDF: send the page images so Gemini can read them
+          images = await renderPdfPagesForAi(pdf, 12);
+          if (pageCount > 12) notice = "Scanned PDF: only the first 12 pages were read.";
+          if (visible < 30) text = "";
         }
+      } else if (lower.endsWith(".docx")) {
+        text = await extractDocx(file);
+      } else if (lower.endsWith(".pptx")) {
+        text = await extractPptx(file);
+      } else if (/\.(jpe?g|png|webp)$/.test(lower)) {
+        const img = await imageToJpeg(file);
+        images = [bytesToBase64(img.bytes)];
+      } else {
+        text = await file.text();
       }
 
-      doc.save("Summary_" + file.name.replace(/\.[^/.]+$/, "") + ".pdf");
+      text = cleanExtractedText(text);
+      if (text.length > 400000) text = text.slice(0, 280000) + "\n\n[... middle omitted ...]\n\n" + text.slice(-120000);
+      if (text.length < 30 && !images.length) throw new Error("No readable text was found in this document.");
+
+      setProcessButton(true, "Summarizing...");
+      const r = await postJson("/api/summarize", { text, images, filename: file.name, length, language, pageCount });
+      const summary = r.summary;
+
+      setProcessButton(true, "Building PDF...");
+      try {
+        const blob = await postJson("/api/summary/pdf", { summary, filename: file.name, pageCount }, true);
+        triggerDownload(blob, `Summary_${baseName(file)}.pdf`);
+      } catch (e) {
+        triggerDownload(new Blob([summary], { type: "text/plain;charset=utf-8" }), `Summary_${baseName(file)}.txt`);
+        return "Saved the summary as a text file because the PDF builder was unavailable.";
+      }
+      return notice || "Summary ready.";
     }
 
     function triggerDownload(blob, filename) {

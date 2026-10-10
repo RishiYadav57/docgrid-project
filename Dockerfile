@@ -24,6 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# PDF import filter used by "PDF to Word" (tries both packages, never fails the build)
+RUN apt-get update \
+    && (apt-get install -y --no-install-recommends libreoffice-draw libreoffice-pdfimport \
+        || apt-get install -y --no-install-recommends libreoffice-draw \
+        || true) \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /usr/src/app
 
 COPY package*.json ./

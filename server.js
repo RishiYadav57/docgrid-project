@@ -1,11 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const { exec, execFile } = require('child_process');
+const { execFile } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs');
-const { PDFDocument, degrees, rgb } = require('pdf-lib');
+const { PDFDocument, StandardFonts, degrees, rgb } = require('pdf-lib');
 
 const execFileP = promisify(execFile);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -14,7 +14,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Enable CORS for Vercel deployment (expose size headers used by Compress PDF)
-app.use(cors({ origin: '*', exposedHeaders: ['X-Original-Size', 'X-Result-Size'] }));
+app.use(cors({ origin: '*', exposedHeaders: ['X-Original-Size', 'X-Result-Size', 'X-Target-Met'] }));
 // Large limit: the browser sends extracted document text for AI tools
 app.use(express.json({ limit: '10mb' }));
 
@@ -104,6 +104,40 @@ async function runQpdf(args) {
   }
 }
 
+// LibreOffice can only run one conversion at a time reliably, so requests are queued
+let libreChain = Promise.resolve();
+function withLibreOffice(task) {
+  const run = libreChain.then(task, task);
+  libreChain = run.catch(() => {});
+  return run;
+}
+
+// Converts a file with LibreOffice and returns the path of the result (written to outDir)
+async function libreConvert(inputPath, targetExt, extraArgs) {
+  const args = [
+    '--headless',
+    '--norestore',
+    '-env:UserInstallation=file:///tmp/docgrid-lo-profile',
+    ...(extraArgs || []),
+    '--convert-to', targetExt,
+    '--outdir', outDir,
+    inputPath
+  ];
+  await withLibreOffice(() => execFileP('libreoffice', args, { timeout: 120000 }));
+  const out = path.join(outDir, `${path.parse(inputPath).name}.${targetExt.split(':')[0]}`);
+  if (!fs.existsSync(out)) throw new Error('The converted file was not produced.');
+  return out;
+}
+
+function safeBase(filename) {
+  const base = String(filename || 'document')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[\\/:*?"<>|\r\n]+/g, '_')
+    .trim()
+    .slice(0, 80);
+  return base || 'document';
+}
+
 // Health Check
 let workingGeminiModel = null;
 app.get('/health', (req, res) => {
@@ -131,7 +165,8 @@ const PREFERRED_MODELS = [
   'gemini-3.1-flash-lite-preview'
 ].filter(Boolean);
 
-async function callGemini(model, prompt, apiKey, opts) {
+async function callGemini(model, promptOrParts, apiKey, opts) {
+  const parts = Array.isArray(promptOrParts) ? promptOrParts : [{ text: promptOrParts }];
   const generationConfig = { temperature: 0.2, maxOutputTokens: 8192 };
   if (opts && opts.json) generationConfig.responseMimeType = 'application/json';
 
@@ -142,7 +177,7 @@ async function callGemini(model, prompt, apiKey, opts) {
       'x-goog-api-key': apiKey
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts }],
       generationConfig
     })
   });
@@ -277,37 +312,156 @@ function requireGeminiKey(res) {
 // =====================================================================
 app.post('/api/summarize', async (req, res) => {
   try {
-    const { text, filename } = req.body;
-    if (!text || text.trim().length < 30) {
+    const { text, filename, length, language, pageCount } = req.body;
+    const images = (Array.isArray(req.body.images) ? req.body.images : [])
+      .filter((i) => typeof i === 'string' && i.length > 100)
+      .slice(0, 12)
+      .map((i) => i.replace(/^data:image\/\w+;base64,/, ''));
+    const cleanText = typeof text === 'string' ? text.trim() : '';
+
+    if (cleanText.length < 30 && !images.length) {
       return res.status(400).json({ error: 'Insufficient document text provided.' });
     }
 
     const apiKey = requireGeminiKey(res);
     if (!apiKey) return;
 
-    const prompt = `You are an elite executive document analyst. Read the following text extracted from "${filename || 'Document'}" and provide a fluent, professional executive summary.
+    const lengthRule = SUMMARY_LENGTHS[length] || SUMMARY_LENGTHS.standard;
+    const langRule = LANGS[language]
+      ? `Write the summary in ${LANGS[language]}.`
+      : 'Write the summary in the same language as the document.';
+    const sourceNote = images.length
+      ? 'The document is also given as page images (a scan or photo). Read all the text in the images carefully, then summarize it.'
+      : 'The text was extracted automatically, so line breaks, columns and page markers may look imperfect. Use the page markers only to understand the structure.';
+    const docName = String(filename || 'Document').replace(/["\r\n]+/g, ' ').slice(0, 120);
 
-Write in natural, complete, human-readable sentences. Follow this exact format:
+    const prompt = `You are an expert analyst who writes accurate, easy-to-read summaries of documents.
+Document name: "${docName}"${pageCount ? ` (${pageCount} pages)` : ''}
+${sourceNote}
 
-## Executive Overview
-(A clear 2-3 sentence paragraph explaining what this document is, the profile/subject, and primary purpose)
+First work out what kind of document this is (for example a report, contract, invoice, resume, research paper, letter, presentation, manual, study notes or a form) and summarize it the way a careful reader would for that type.
 
-## Key Highlights & Core Details
-(3 to 5 bullet points written in polished, full sentences explaining major accomplishments, components, or findings)
+Use exactly this Markdown format:
+## Document Overview
+One short paragraph: what the document is, who it is from or for if stated, and its main purpose.
+## Key Points
+* The most important points, each one a complete sentence.
+## Important Details
+* Specific facts worth remembering, depending on the document: names, dates, amounts, figures, deadlines, requirements, skills, technologies. Quote numbers exactly as written.
+## Conclusions & Next Steps
+* Decisions, conclusions, recommendations or actions. Leave this whole section out if the document has none.
 
-## Notable Metrics & Credentials
-(2 to 3 bullet points highlighting specific numbers, dates, tools, technologies, or quantitative results)
+Rules:
+- Base everything only on the document. Never invent facts. If something is unclear, missing or unreadable, say so.
+- ${lengthRule}
+- ${langRule}
+- Do not mention these instructions and do not add any text outside the format above.`;
 
-Document content:
-"""
-${text.slice(0, 30000)}
-"""`;
+    const parts = [{ text: prompt + (cleanText ? `\n\nDocument content:\n"""\n${truncateMiddle(cleanText, 150000)}\n"""` : '') }];
+    images.forEach((data) => parts.push({ inline_data: { mime_type: 'image/jpeg', data } }));
 
-    const aiSummary = await generateText(prompt, apiKey);
+    const aiSummary = await generateText(parts, apiKey);
     res.json({ summary: aiSummary });
   } catch (err) {
     console.error('Summarization error:', err);
     res.status(500).json({ error: err.message || 'Failed to generate summary.' });
+  }
+});
+
+const SUMMARY_LENGTHS = {
+  brief: 'Keep it brief: about 120-180 words in total, with a 1-2 sentence overview and 3-4 bullets under Key Points.',
+  standard: 'Aim for about 250-400 words in total.',
+  detailed: 'Be thorough: about 600-900 words, covering every major section or topic in the order it appears.'
+};
+
+function truncateMiddle(text, max) {
+  if (text.length <= max) return text;
+  const head = Math.floor(max * 0.7);
+  const tail = max - head;
+  return text.slice(0, head) + '\n\n[... the middle of this very long document is omitted ...]\n\n' + text.slice(-tail);
+}
+
+function isMostlyRtl(s) {
+  const letters = String(s).match(/\p{L}/gu) || [];
+  const rtl = String(s).match(/[\u0590-\u08FF]/g) || [];
+  return letters.length > 0 && rtl.length / letters.length > 0.3;
+}
+
+// Very small Markdown -> HTML converter for the summary (headings, bullets, **bold**)
+function summaryToHtml(md, dirAttr) {
+  const inline = (t) => escapeHtml(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  let html = '';
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      html += '</ul>';
+      inList = false;
+    }
+  };
+  for (const raw of String(md).replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    let m;
+    if ((m = line.match(/^#{1,3}\s+(.*)$/))) {
+      closeList();
+      html += `<h2${dirAttr}>${inline(m[1])}</h2>`;
+    } else if ((m = line.match(/^[*\-\u2022]\s+(.*)$/))) {
+      if (!inList) {
+        html += `<ul${dirAttr}>`;
+        inList = true;
+      }
+      html += `<li>${inline(m[1])}</li>`;
+    } else {
+      closeList();
+      html += `<p${dirAttr}>${inline(line)}</p>`;
+    }
+  }
+  closeList();
+  return html;
+}
+
+// Builds the summary PDF with LibreOffice + Noto fonts (so every language renders correctly)
+app.post('/api/summary/pdf', async (req, res) => {
+  const { summary, filename, pageCount } = req.body;
+  if (!summary || String(summary).trim().length < 10) {
+    return res.status(400).json({ error: 'No summary to build the PDF from.' });
+  }
+
+  const dirAttr = isMostlyRtl(summary) ? ' dir="rtl"' : '';
+  const name = safeBase(filename);
+  const htmlPath = newOutPath('summary', 'html');
+  let pdfPath;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { font-family: 'Noto Sans', 'Noto Sans CJK SC', 'Liberation Sans', sans-serif; font-size: 10.5pt; line-height: 1.55; color: #1e293b; }
+  h1 { font-size: 18pt; margin: 0 0 4pt 0; color: #0c4a6e; }
+  h2 { font-size: 12.5pt; margin: 14pt 0 4pt 0; color: #0369a1; }
+  p { margin: 0 0 6pt 0; }
+  li { margin: 0 0 4pt 0; }
+  .meta { font-size: 9pt; color: #64748b; margin: 0 0 10pt 0; }
+  .foot { font-size: 8.5pt; color: #94a3b8; margin-top: 16pt; }
+</style></head>
+<body>
+<h1>DocGrid AI Summary</h1>
+<p class="meta">Document: ${escapeHtml(name)}${pageCount ? ` | ${Number(pageCount) || ''} pages` : ''} | Created ${new Date().toISOString().slice(0, 10)}</p>
+${summaryToHtml(summary, dirAttr)}
+<p class="foot">Created automatically with Google Gemini. Please check important details against the original document.</p>
+</body></html>`;
+
+  try {
+    fs.writeFileSync(htmlPath, html, 'utf8');
+    pdfPath = await libreConvert(htmlPath, 'pdf', ['--infilter=HTML (StarWriter)']);
+    downloadAndClean(res, pdfPath, `Summary_${name}.pdf`, [htmlPath]);
+  } catch (err) {
+    safeUnlink(htmlPath);
+    safeUnlink(pdfPath);
+    console.error('Summary PDF error:', err.stderr || err);
+    res.status(500).json({ error: 'Could not build the summary PDF.' });
   }
 });
 
@@ -360,9 +514,8 @@ app.post('/api/translate/pdf', async (req, res) => {
   if (!LANGS[targetLang]) return res.status(400).json({ error: 'Unsupported target language.' });
   if (!text || text.trim().length < 2) return res.status(400).json({ error: 'No text to build the PDF from.' });
 
-  const stamp = `translated-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-  const htmlPath = path.join(outDir, `${stamp}.html`);
-  const pdfPath = path.join(outDir, `${stamp}.pdf`);
+  const htmlPath = newOutPath('translated', 'html');
+  let pdfPath;
   const dirAttr = RTL_LANGS.includes(targetLang) ? ' dir="rtl"' : '';
 
   const paragraphs = String(text)
@@ -384,15 +537,8 @@ ${paragraphs}
 
   try {
     fs.writeFileSync(htmlPath, html, 'utf8');
-    await execFileP(
-      'libreoffice',
-      ['--headless', '--infilter=HTML (StarWriter)', '--convert-to', 'pdf', '--outdir', outDir, htmlPath],
-      { timeout: 90000 }
-    );
-    if (!fs.existsSync(pdfPath)) throw new Error('PDF was not produced.');
-
-    const base = String(filename || 'document').replace(/\.[^/.]+$/, '').replace(/[^\w.-]+/g, '_');
-    downloadAndClean(res, pdfPath, `${base}_${targetLang}.pdf`, [htmlPath]);
+    pdfPath = await libreConvert(htmlPath, 'pdf', ['--infilter=HTML (StarWriter)']);
+    downloadAndClean(res, pdfPath, `${safeBase(filename)}_${targetLang}.pdf`, [htmlPath]);
   } catch (err) {
     safeUnlink(htmlPath);
     safeUnlink(pdfPath);
@@ -491,60 +637,43 @@ app.post('/api/convert/tables-to-xlsx', async (req, res) => {
 // =====================================================================
 // 1. HIGH-FIDELITY OFFICE CONVERTER (DOCX, PPTX, XLSX to PDF)
 // =====================================================================
-app.post('/api/convert/to-pdf', upload.single('file'), (req, res) => {
+app.post('/api/convert/to-pdf', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file received.' });
 
-  const inputPath = req.file.path;
-  const fileNameWithoutExt = path.parse(req.file.filename).name;
-  const expectedPdfPath = path.join(outDir, `${fileNameWithoutExt}.pdf`);
-
-  // LibreOffice headless conversion command
-  const cmd = `libreoffice --headless --convert-to pdf "${inputPath}" --outdir "${outDir}"`;
-
-  exec(cmd, { timeout: 60000 }, (error, stdout, stderr) => {
-    safeUnlink(inputPath);
-
-    if (error) {
-      console.error('LibreOffice Execution Error:', stderr || error);
-      return res.status(500).json({ error: 'Document compilation failed.' });
-    }
-
-    if (!fs.existsSync(expectedPdfPath)) {
-      return res.status(500).json({ error: 'Output PDF was not produced.' });
-    }
-
-    res.download(expectedPdfPath, `${path.parse(req.file.originalname).name}.pdf`, (err) => {
-      safeUnlink(expectedPdfPath);
+  const input = req.file.path;
+  let out;
+  try {
+    out = await libreConvert(input, 'pdf');
+    res.download(out, `${path.parse(req.file.originalname).name}.pdf`, () => {
+      safeUnlink(out);
+      safeUnlink(input);
     });
-  });
+  } catch (err) {
+    safeUnlink(input);
+    safeUnlink(out);
+    console.error('LibreOffice Execution Error:', err.stderr || err);
+    res.status(500).json({ error: 'Document compilation failed. Check that the file is a valid, unprotected document.' });
+  }
 });
 
 // 2. HIGH-FIDELITY PDF TO WORD (PDF to DOCX via LibreOffice)
-app.post('/api/convert/to-docx', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file received.' });
+app.post('/api/convert/to-docx', upload.single('file'), async (req, res) => {
+  if (!requirePdf(req, res)) return;
 
-  const inputPath = req.file.path;
-  const fileNameWithoutExt = path.parse(req.file.filename).name;
-  const expectedDocxPath = path.join(outDir, `${fileNameWithoutExt}.docx`);
-
-  const cmd = `libreoffice --headless --infilter="writer_pdf_import" --convert-to docx "${inputPath}" --outdir "${outDir}"`;
-
-  exec(cmd, { timeout: 60000 }, (error, stdout, stderr) => {
-    safeUnlink(inputPath);
-
-    if (error) {
-      console.error('LibreOffice Execution Error:', stderr || error);
-      return res.status(500).json({ error: 'Conversion to Word failed.' });
-    }
-
-    if (!fs.existsSync(expectedDocxPath)) {
-      return res.status(500).json({ error: 'DOCX file not generated.' });
-    }
-
-    res.download(expectedDocxPath, `${path.parse(req.file.originalname).name}.docx`, (err) => {
-      safeUnlink(expectedDocxPath);
+  const input = req.file.path;
+  let out;
+  try {
+    out = await libreConvert(input, 'docx', ['--infilter=writer_pdf_import']);
+    res.download(out, `${path.parse(req.file.originalname).name}.docx`, () => {
+      safeUnlink(out);
+      safeUnlink(input);
     });
-  });
+  } catch (err) {
+    safeUnlink(input);
+    safeUnlink(out);
+    console.error('LibreOffice Execution Error:', err.stderr || err);
+    res.status(500).json({ error: 'Conversion to Word failed. If the PDF is password-protected, unlock it first.' });
+  }
 });
 
 // 3. PDF TO POWERPOINT (each page becomes a slide image; Poppler renders, PptxGenJS builds)
@@ -625,85 +754,195 @@ app.post('/api/pdf/merge', upload.array('files'), async (req, res) => {
   }
 });
 
-// 5. WATERMARK PDF (pdf-lib)
+// 5. WATERMARK PDF (pdf-lib): centered diagonal text, sized to fit every page
 app.post('/api/pdf/watermark', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file received.' });
+  if (!requirePdf(req, res)) return;
 
-  const watermarkText = req.body.text || 'CONFIDENTIAL';
+  const input = req.file.path;
+  const output = newOutPath('watermarked', 'pdf');
+  const text = String(req.body.text || 'CONFIDENTIAL').trim().slice(0, 60) || 'CONFIDENTIAL';
 
   try {
-    const fileBytes = fs.readFileSync(req.file.path);
-    const doc = await PDFDocument.load(fileBytes);
-    const pages = doc.getPages();
+    const doc = await PDFDocument.load(fs.readFileSync(input));
+    const font = await doc.embedFont(StandardFonts.HelveticaBold);
 
-    pages.forEach((p) => {
-      const { width, height } = p.getSize();
-      p.drawText(watermarkText, {
-        x: width / 4,
-        y: height / 2,
-        size: 40,
+    try {
+      font.widthOfTextAtSize(text, 12);
+    } catch (e) {
+      safeUnlink(input);
+      return res.status(400).json({ error: 'The watermark can only use English letters, numbers and common symbols.' });
+    }
+
+    const angle = Math.PI / 4;
+    for (const page of doc.getPages()) {
+      const { width, height } = page.getSize();
+      const maxW = Math.sqrt(width * width + height * height) * 0.7;
+      let size = 80;
+      let tw = font.widthOfTextAtSize(text, size);
+      if (tw > maxW) {
+        size = (size * maxW) / tw;
+        tw = maxW;
+      }
+      const th = font.heightAtSize(size);
+      page.drawText(text, {
+        x: width / 2 - (tw / 2) * Math.cos(angle) + th * 0.35 * Math.sin(angle),
+        y: height / 2 - (tw / 2) * Math.sin(angle) - th * 0.35 * Math.cos(angle),
+        size,
+        font,
         color: rgb(0.8, 0.2, 0.2),
         opacity: 0.25,
         rotate: degrees(45)
       });
-    });
+    }
 
-    const outputBytes = await doc.save();
-    const outputPath = path.join(outDir, `Watermarked-${Date.now()}.pdf`);
-    fs.writeFileSync(outputPath, outputBytes);
-
-    safeUnlink(req.file.path);
-
-    res.download(outputPath, `Watermarked_${req.file.originalname}`, (err) => {
-      safeUnlink(outputPath);
-    });
+    fs.writeFileSync(output, await doc.save());
+    downloadAndClean(res, output, `${path.parse(req.file.originalname).name}_watermarked.pdf`, [input]);
   } catch (err) {
-    safeUnlink(req.file.path);
-    console.error(err);
-    res.status(500).json({ error: 'Failed to apply watermark. Use plain English letters and numbers, or unlock the PDF first.' });
+    safeUnlink(input);
+    safeUnlink(output);
+    console.error('Watermark error:', err);
+    res.status(500).json({ error: 'Could not add the watermark. If the PDF is password-protected, unlock it first.' });
   }
 });
 
-// 6. COMPRESS PDF (Ghostscript)
+// 6. COMPRESS / OPTIMIZE PDF (Ghostscript for images, qpdf for the file structure)
+const COMPRESS_PRESETS = {
+  low: { dpi: 200, q: 0.2 },
+  recommended: { dpi: 150, q: 0.4 },
+  strong: { dpi: 110, q: 0.6 },
+  extreme: { dpi: 72, q: 0.9 }
+};
+const QUALITY_MAP = { high: 0.2, medium: 0.4, low: 0.7, verylow: 0.9 }; // Ghostscript QFactor: lower = better quality
+const COMPRESS_LADDER = [
+  { dpi: 150, q: 0.4 },
+  { dpi: 120, q: 0.55 },
+  { dpi: 96, q: 0.7 },
+  { dpi: 72, q: 0.85 },
+  { dpi: 60, q: 0.92 }
+];
+
+function gsCompressArgs(input, output, s, gray) {
+  const dict = (q) => `<< /QFactor ${q} /Blend 1 /ColorTransform 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >>`;
+  const args = [
+    '-sDEVICE=pdfwrite',
+    '-dCompatibilityLevel=1.5',
+    '-dPDFSETTINGS=/default',
+    '-dNOPAUSE',
+    '-dQUIET',
+    '-dBATCH',
+    '-dDetectDuplicateImages=true',
+    '-dCompressFonts=true',
+    '-dSubsetFonts=true',
+    '-dEmbedAllFonts=true',
+    '-dCompressPages=true',
+    '-dDownsampleColorImages=true',
+    '-dColorImageDownsampleType=/Bicubic',
+    `-dColorImageResolution=${s.dpi}`,
+    '-dDownsampleGrayImages=true',
+    '-dGrayImageDownsampleType=/Bicubic',
+    `-dGrayImageResolution=${s.dpi}`,
+    '-dDownsampleMonoImages=true',
+    '-dMonoImageDownsampleType=/Subsample',
+    `-dMonoImageResolution=${Math.max(s.dpi, 150)}`,
+    '-dAutoFilterColorImages=false',
+    '-dColorImageFilter=/DCTEncode',
+    '-dAutoFilterGrayImages=false',
+    '-dGrayImageFilter=/DCTEncode'
+  ];
+  if (gray) args.push('-sColorConversionStrategy=Gray', '-dProcessColorModel=/DeviceGray');
+  args.push(
+    `-sOutputFile=${output}`,
+    '-c',
+    `<< /ColorACSImageDict ${dict(s.q)} /GrayACSImageDict ${dict(s.q)} >> setdistillerparams`,
+    '-f',
+    input
+  );
+  return args;
+}
+
+// Rewrites the PDF structure (object streams, recompressed streams); returns { path, size } or null
+async function qpdfOptimize(src, tmpList) {
+  const out = newOutPath('optimized', 'pdf');
+  tmpList.push(out);
+  try {
+    await runQpdf(['--object-streams=generate', '--compress-streams=y', '--recompress-flate', '--compression-level=9', src, out]);
+    return fs.existsSync(out) ? { path: out, size: fs.statSync(out).size } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 app.post('/api/pdf/compress', upload.single('file'), async (req, res) => {
   if (!requirePdf(req, res)) return;
 
   const input = req.file.path;
-  const output = newOutPath('compressed', 'pdf');
-  const level = ['low', 'recommended', 'extreme'].includes(req.body.level) ? req.body.level : 'recommended';
-  const preset = { low: '/printer', recommended: '/ebook', extreme: '/screen' }[level];
+  const tmp = [];
+  const level = String(req.body.level || 'recommended');
+  const gray = req.body.gray === '1' || req.body.gray === 'true';
+  const targetMb = parseFloat(req.body.targetMb);
+  const targetBytes = Number.isFinite(targetMb) && targetMb > 0 ? Math.round(targetMb * 1048576) : 0;
+
+  let first;
+  if (level === 'custom') {
+    const dpi = Math.min(600, Math.max(36, parseInt(req.body.dpi, 10) || 150));
+    const q = QUALITY_MAP[req.body.quality] !== undefined ? QUALITY_MAP[req.body.quality] : 0.4;
+    first = { dpi, q };
+  } else {
+    first = COMPRESS_PRESETS[level] || COMPRESS_PRESETS.recommended;
+  }
+
+  // With a target size we keep trying stronger settings until the file is small enough
+  const attempts = [first];
+  if (targetBytes) {
+    for (const step of COMPRESS_LADDER) {
+      if (step.dpi < attempts[attempts.length - 1].dpi) attempts.push(step);
+    }
+  }
 
   try {
-    await execFileP(
-      'gs',
-      [
-        '-sDEVICE=pdfwrite',
-        '-dCompatibilityLevel=1.5',
-        `-dPDFSETTINGS=${preset}`,
-        '-dDetectDuplicateImages=true',
-        '-dCompressFonts=true',
-        '-dNOPAUSE',
-        '-dQUIET',
-        '-dBATCH',
-        `-sOutputFile=${output}`,
-        input
-      ],
-      { timeout: 120000 }
-    );
-
     const inSize = fs.statSync(input).size;
-    const outSize = fs.statSync(output).size;
-    const useCompressed = outSize > 0 && outSize < inSize;
+    const started = Date.now();
+    let best = null;
 
-    res.set({
-      'X-Original-Size': String(inSize),
-      'X-Result-Size': String(useCompressed ? outSize : inSize)
-    });
+    for (const s of attempts) {
+      if (best && Date.now() - started > 70000) break;
+      const out = newOutPath('compressed', 'pdf');
+      tmp.push(out);
+      try {
+        await execFileP('gs', gsCompressArgs(input, out, s, gray), { timeout: 120000 });
+      } catch (e) {
+        if (!best) throw e;
+        break;
+      }
+      if (!fs.existsSync(out)) continue;
+      const size = fs.statSync(out).size;
+      if (size > 0 && (!best || size < best.size)) best = { path: out, size };
+      if (!targetBytes || size <= targetBytes) break;
+    }
+    if (!best) throw new Error('Ghostscript produced no output.');
+
+    // Structure pass: often saves a little more, and sometimes helps when images were already small
+    const candidates = [best];
+    const o1 = await qpdfOptimize(best.path, tmp);
+    if (o1) candidates.push(o1);
+    if (best.size >= inSize) {
+      const o2 = await qpdfOptimize(input, tmp);
+      if (o2) candidates.push(o2);
+    }
+    candidates.sort((a, b) => a.size - b.size);
+    const winner = candidates[0];
+    const useCompressed = winner.size > 0 && winner.size < inSize;
+    const finalSize = useCompressed ? winner.size : inSize;
+
+    const headers = { 'X-Original-Size': String(inSize), 'X-Result-Size': String(finalSize) };
+    if (targetBytes) headers['X-Target-Met'] = finalSize <= targetBytes ? '1' : '0';
+    res.set(headers);
+
     const name = `${path.parse(req.file.originalname).name}_compressed.pdf`;
-    downloadAndClean(res, useCompressed ? output : input, name, [input, output]);
+    downloadAndClean(res, useCompressed ? winner.path : input, name, [input, ...tmp]);
   } catch (err) {
     safeUnlink(input);
-    safeUnlink(output);
+    tmp.forEach(safeUnlink);
     console.error('Compress error:', err.stderr || err);
     res.status(500).json({ error: 'Could not compress this PDF. If it is password-protected, unlock it first.' });
   }
